@@ -248,5 +248,5 @@ Windows 下 `os.rename()` 在目标文件已存在时会抛出 `FileExistsError`
 
 ## 许可证
 
-[MIT License](LICENSE.md) - Copyright (c) 2023 thinksmart-nicholas
+[MIT License](LICENSE.md) - Copyright (c) 2026 thinksmart-nicholas
 
