@@ -1,8 +1,8 @@
-# youdaonote-pull
+# youdaonote-to-md
 
 将有道云笔记批量导出为本地 Markdown 文件，图片自动内嵌为 base64，文件完全自包含，可直接导入 ima、Notion 等云端知识库。
 
-> 基于 [DeppWang/youdaonote-pull](https://github.com/DeppWang/youdaonote-pull) 重构，增强图片 base64 内嵌、文件名清理、Windows 兼容性等功能。
+> 基于 [liukui2020/youdaonote-md-exporter](https://github.com/liukui2020/youdaonote-md-exporter) 重构，重点完善了原版导出md丢失笔记的富文本格式的问题。
 
 ## 功能特性
 
@@ -20,6 +20,7 @@
 - `file:///` 本地绝对路径引用自动清理
 - 图片文件名特殊字符自动清理（`(){}[]$~@%` 等），防止 Markdown 链接截断
 - 可选上传图片到 SM.MS 图床
+- **支持原笔记中富文本格式的导出**：富文本格式以内嵌HTML标签的方式直接加入到导出的Markdown文件中，目前在edge浏览器插件Markdown Viewer Enhanced和语雀上测试通过。
 
 ### 兼容性
 
@@ -157,7 +158,7 @@ youdaonote-pull/
 ├── config.json          # 导出配置
 ├── cookies.json         # 有道云笔记 Cookie
 ├── requirements.txt     # Python 依赖
-├── LICENSE.md           # MIT 许可证
+├── LICENSE           # MIT 许可证
 ├── core/                # 核心模块
 │   ├── api.py           # 有道云笔记 API 封装（登录、获取目录、下载文件）
 │   ├── covert.py        # 笔记格式转换（XML/JSON/HTML → Markdown）
@@ -247,4 +248,5 @@ Windows 下 `os.rename()` 在目标文件已存在时会抛出 `FileExistsError`
 
 ## 许可证
 
-[MIT License](LICENSE.md) - Copyright (c) 2023 DeppWang
+[MIT License](LICENSE.md) - Copyright (c) 2023 thinksmart-nicholas
+
