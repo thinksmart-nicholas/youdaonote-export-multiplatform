@@ -1,0 +1,4 @@
+requests>=2.32.0
+markdownify==0.5.1
+Brotli>=1.1.0
+win32-setctime==1.1.0
