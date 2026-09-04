@@ -28,6 +28,13 @@ MIME_MAP = {
     ".webp": "image/webp",
 }
 
+# Typora 兼容：内联 base64 图片的最大字节数（原始图像大小）。
+# 超过此阈值的图片会改为下载到本地 images/ 目录（相对路径引用），
+# 因为 Typora 对超长单行（~100K 字符以上）的 base64 data-URI 会
+# 跳过 Markdown 解析、直接把原始源码显示出来；浏览器/语雀无此限制。
+# 32 KB 原始图像 ≈ 43,690 字符的 base64，是 Typora 实测安全值。
+MAX_INLINE_IMAGE_BYTES = 32 * 1024
+
 
 class ImagePull:
     def __init__(
@@ -140,7 +147,9 @@ class ImagePull:
         """
         下载图片并编码为 base64 data URI
         :param image_url: 图片 URL
-        :return: data URI 字符串，失败返回空字符串
+        :return: data URI 字符串，失败或超过阈值返回空字符串
+                 （空字符串会触发上游回退为本地文件下载模式，
+                  用于兼容 Typora 对超长 base64 单行解析失败的问题）
         """
         try:
             response = self.youdaonote_api.http_get(image_url)
@@ -152,6 +161,19 @@ class ImagePull:
         if response.status_code != 200 or not content_type:
             logging.info(
                 "下载图片「{}」失败！图片可能已失效".format(image_url)
+            )
+            return ""
+
+        # Typora 兼容：超过大小阈值的图片强制走本地文件模式
+        # （base64 超长出单行 → Typora 不解析为图片，直接显示源码）
+        if len(response.content) > MAX_INLINE_IMAGE_BYTES:
+            logging.info(
+                "图片「{}」大小 {:.1f} KB，超过内联阈值 {} KB，"
+                "为兼容 Typora 将下载为本地文件而非内嵌 base64".format(
+                    image_url,
+                    len(response.content) / 1024,
+                    MAX_INLINE_IMAGE_BYTES // 1024,
+                )
             )
             return ""
 
