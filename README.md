@@ -20,7 +20,7 @@
 - `file:///` 本地绝对路径引用自动清理
 - 图片文件名特殊字符自动清理（`(){}[]$~@%` 等），防止 Markdown 链接截断
 - 可选上传图片到 SM.MS 图床
-- **支持原笔记中富文本格式的导出**：富文本格式以内嵌HTML标签的方式直接加入到导出的Markdown文件中，目前在edge浏览器插件Markdown Viewer Enhanced和语雀上测试通过。
+- **支持原笔记中富文本格式的导出**：富文本格式以内嵌HTML标签的方式直接加入到导出的Markdown文件中，目前在edge浏览器插件Markdown Viewer Enhanced、语雀和Typroa上测试通过。
 
 ### 兼容性
 
