@@ -847,9 +847,10 @@ def _yuque_unwrap_padding_to_md_list(md_file_path: str) -> int:
                 continue
             level = max(1, min(8, round(px / 24)))
             body = m_div.group("body") or ""
-            # level*2 spaces + "- "（2空格每级，level=1 不前置空格避免 4+列）
-            pad_spaces = " " * ((level - 1) * 2)
-            new_line = "{}- {}".format(pad_spaces, body)
+            # 用 &emsp; 实现缩进，保留原笔记的列表符号
+            # &emsp; = 1em 宽，恰好等于 1 个中文字符宽度，不触发 Markdown 代码块
+            indent = "&emsp;" * ((level - 1) * 2)
+            new_line = "{}{}".format(indent, body)
             if new_line != bare:
                 # 保持原 \r（若源行有）
                 if orig.endswith("\r") and not new_line.endswith("\r"):
@@ -882,8 +883,9 @@ def _yuque_unwrap_padding_to_md_list(md_file_path: str) -> int:
                 continue
             marker = m_li.group(1)
             rest = after[len(marker):]
-            pad_spaces = " " * ((accum_lv - 1) * 2)
-            new_line = "{}{}{}".format(pad_spaces, marker, rest)
+            # 保留原笔记的列表符号（marker），只添加 &emsp; 缩进
+            indent = "&emsp;" * ((accum_lv - 1) * 2)
+            new_line = "{}{}{}".format(indent, marker, rest)
             if new_line != bare:
                 if orig.endswith("\r") and not new_line.endswith("\r"):
                     new_line += "\r"
@@ -1137,15 +1139,9 @@ def _apply_postprocess_chain(new_file_path, native_indent_written=None) -> None:
     # 固定前 4 步（与缩进策略无关，永远执行）
     _externalize_oversized_base64_images(new_file_path)
     _merge_soft_linebreaks(new_file_path)
-    # 语雀兼容：把"HTML style padding-left 容器（div/span）"降级为 CommonMark 原生
-    # 嵌套无序列表（2 spaces per level + "- "）。必须放在"软换行合并之后"，避免
-    # metrics 续行被错配；放在"裸文 style 修复之前"，保证 裸文判定不被 div 影响。
-    #
-    # 注意：降级不影响 Typora/浏览器——它们现在按 Markdown 列表语法解析缩进（level=1 列0，
-    # level=2 = 2 空格 + "- "，level=3 = 4 空格 + "- "），而不是依赖 padding CSS，
-    # 但视觉缩进仍然相同（2 空格每级刚好对齐 1 级深度），且不会触发"≥4 列=代码块"
-    # 围栏（因为 level=1/2 列数 <5；level=3 的 4 空格前缀后面紧跟的是 Markdown 原生
-    # bullet "- "，CommonMark 把连续 bullet 当嵌套列表，不再走 code-block 分支）。
+    # 语雀兼容：把"HTML style padding-left 容器（div/span）"降级为 &nbsp; 纯缩进。
+    # 必须放在"软换行合并之后"，避免 metrics 续行被错配；
+    # 放在"裸文 style 修复之前"，保证裸文判定不被 div 影响。
     _yuque_unwrap_padding_to_md_list(new_file_path)
     _repair_bare_text_style(new_file_path)
     # 第 4 步：三态
@@ -1809,25 +1805,23 @@ class XmlElementConvert(object):
     @staticmethod
     def convert_list_item_func(**kwargs):
         """列表：按 XML <list-item> 元素原生缩进等级写缩进。
-        ⚠️ 不能在行首直接写 tab（≥4 空格缩进 → Markdown 代码块，`- / 1.` 会被当源码打印）。
-        用 inline span + padding-left（软缩进，仍在文本同一行）实现视觉层级。"""
+        用 HTML div padding-left 容器实现视觉缩进，保留原笔记的列表符号。"""
         element = kwargs.get("element")
         list_id = element.attrib["list-id"]
         is_ordered = kwargs.get("list_item", {}).get(list_id)
         text = kwargs.get("text") or ""
-        if is_ordered == "unordered":
-            line = "- {text}".format(text=text)
-        elif is_ordered == "ordered":
-            # 编号用 "1. "，让不同渲染器按连续 1. 自动递增
-            line = "1. {text}".format(text=text)
-        else:
-            line = text
+        # 保留原笔记的列表符号：有序列表用 "1. "，无序列表用 "- "
+        prefix = "1. " if is_ordered else "- "
+        line = prefix + text
         # 原生缩进：双源读取 —— ① <list-item level="N"> attrib ② <styles>/<inline-styles> 子 .text-indent 文本
         level = _extract_indent_level(element)
         if level:
-            # inline 软缩进：padding-left = level*24px（每级 ≈ 有道一级 CSS padding-left:24px）
-            pad = '<span style="padding-left:{}px"></span>'.format(level * 24)
-            line = pad + line
+            # 用 div padding-left 容器（与 convert_para_func 一致，避免行首 tab 触发代码块）
+            body = line.rstrip("\r\n")
+            tail = line[len(body):]
+            safe_px = str(level * 24)
+            body = '<div style="padding-left:{}px">{}</div>'.format(safe_px, body)
+            line = body + tail
         return line
 
     @staticmethod
@@ -2495,8 +2489,7 @@ class JsonConvert(object):
 
     def convert_l_func(self, content):
         """有序/无序列表：按 JSON `content["4"]["ll"]`（list-level）写层级。
-        ⚠️ 不能写行首 tab/4+ 空格（会被 Markdown 当代码块，span 源码外显）。
-        用 inline `<span style="padding-left:N*24px"></span>` 软缩进在列表符号前缀前。"""
+        用 HTML div padding-left 容器实现视觉缩进，保留原笔记的列表符号。"""
         text = self._get_common_text(content=content)
         props = content.get("4") if isinstance(content, dict) else {}
         level_raw = props.get("ll") if isinstance(props, dict) else None
@@ -2505,14 +2498,18 @@ class JsonConvert(object):
         except (TypeError, ValueError):
             level = 0
         level = max(0, min(8, level))
-        pad = ('<span style="padding-left:{}px"></span>'.format(level * 24)) if level else ""
-        is_ordered = props.get("lt") if isinstance(props, dict) else None
-        if is_ordered == "unordered":
-            return f"{pad}- {text}"
-        if is_ordered == "ordered":
-            # 编号统一 "1. "，渲染器按连续 1. 自动递增
-            return f"{pad}1. {text}"
-        return f"{pad}{text}"
+        # 保留原笔记的列表符号（默认无序列表用 "- "）
+        if level:
+            line = "- " + text
+        else:
+            line = text
+        if level:
+            body = line.rstrip("\r\n")
+            tail = line[len(body):]
+            safe_px = str(level * 24)
+            body = '<div style="padding-left:{}px">{}</div>'.format(safe_px, body)
+            return body + tail
+        return text
 
     def convert_t_func(self, content):
         """
