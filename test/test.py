@@ -387,6 +387,80 @@ class YoudaoNotePullTest(unittest.TestCase):
         dir_id, error_msg = youdaonote_pull._get_ydnote_dir_id(ydnote_dir="test_dir")
         self.assertEqual(dir_id, "test_dir_id")
 
+    def test_get_ydnote_dir_id_multi_level(self):
+        """
+        测试 ydnote_dir 支持多级路径（如「工作/2026/项目A」）
+        python test.py YoudaoNotePullTest.test_get_ydnote_dir_id_multi_level
+        """
+
+        # 先 mock 登录一下
+        youdaonote_api = YoudaoNoteApi(cookies_path=TEST_COOKIES_PATH)
+        with patch(
+            "pull.YoudaoNoteApi._covert_cookies",
+            return_value=[["YNOTE_CSTK", "fPk5IkDg", ".note.youdao.com", "/"]],
+        ):
+            error_msg = youdaonote_api.login_by_cookies()
+            self.assertFalse(error_msg)
+
+        def entry(id_, name, is_dir=True):
+            return {"fileEntry": {"id": id_, "name": name, "dir": is_dir}}
+
+        tree = {
+            "test_root_id": [entry("d_work", "工作"), entry("d_personal", "个人")],
+            "d_work": [
+                entry("d_2026", "2026"),
+                entry("d_2025", "2025"),
+                entry("f_todo", "待办", False),
+            ],
+            "d_2026": [entry("d_proj_a", "项目A"), entry("d_proj_b", "项目B")],
+            "d_personal": [entry("d_diary", "日记")],
+        }
+        youdaonote_api.get_root_dir_info_id = Mock(
+            return_value={"fileEntry": {"id": "test_root_id"}}
+        )
+        youdaonote_api.get_dir_info_by_id = Mock(
+            side_effect=lambda dir_id: {"entries": tree.get(dir_id, [])}
+        )
+
+        youdaonote_pull = YoudaoNotePull()
+        youdaonote_pull.youdaonote_api = youdaonote_api
+
+        # 单级目录名：与改动前行为完全一致
+        dir_id, error_msg = youdaonote_pull._get_ydnote_dir_id(ydnote_dir="工作")
+        self.assertEqual(dir_id, "d_work")
+        self.assertEqual(error_msg, "")
+
+        # 多级路径（/ 分隔）
+        dir_id, error_msg = youdaonote_pull._get_ydnote_dir_id(
+            ydnote_dir="工作/2026/项目A"
+        )
+        self.assertEqual(dir_id, "d_proj_a")
+        self.assertEqual(error_msg, "")
+
+        # 多级路径（\ 分隔）+ 首尾分隔符 + 多余空白，均应被容错
+        dir_id, error_msg = youdaonote_pull._get_ydnote_dir_id(
+            ydnote_dir=" 工作\\2026\\项目B/ "
+        )
+        self.assertEqual(dir_id, "d_proj_b")
+        self.assertEqual(error_msg, "")
+
+        # 中间层级是文件而非文件夹
+        dir_id, error_msg = youdaonote_pull._get_ydnote_dir_id(
+            ydnote_dir="工作/待办/子项"
+        )
+        self.assertEqual(dir_id, "")
+        self.assertTrue("不是文件夹" in error_msg)
+
+        # 中间层级不存在：给出具体层级
+        dir_id, error_msg = youdaonote_pull._get_ydnote_dir_id(ydnote_dir="工作/不存在")
+        self.assertEqual(dir_id, "")
+        self.assertTrue("第 2 层" in error_msg)
+
+        # 单级不存在仍沿用旧文案，保证向后兼容
+        dir_id, error_msg = youdaonote_pull._get_ydnote_dir_id(ydnote_dir="不存在")
+        self.assertEqual(dir_id, "")
+        self.assertEqual(error_msg, "有道云笔记指定顶层目录不存在")
+
 
 if __name__ == "__main__":
     unittest.main()

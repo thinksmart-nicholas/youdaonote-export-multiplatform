@@ -15,6 +15,40 @@ PRESERVE_NATIVE_INDENT = True
 
 MARKDOWN_SUFFIX = ".md"
 
+
+def _ex_escape_attr(s):
+    """
+    转义 HTML/URL 属性值中的特殊字符，避免 src/alt 含引号导致 Markdown 渲染错误。
+    用于 <img src="..." alt="..."> 标签属性值。
+    """
+    if s is None:
+        return ""
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _md_image(alt, path):
+    """
+    输出标准 Markdown 图片语法 ![alt](path)。
+
+    语雀在导入 Markdown 时只识别 ![]() 语法，不会把 HTML <img> 标签转换成图片
+    对象，因此白板/流程图一律用 Markdown 语法输出 —— 浏览器、Typora、语雀、
+    GitHub、VS Code 都能正常渲染，兼容性比原始 HTML 标签更好。
+
+    路径中的空格转成 %20，避免链接被截断；alt 中的方括号转义，防止提前闭合。
+    """
+    safe_alt = str(alt or "").replace("\r", " ").replace("\n", " ")
+    safe_alt = safe_alt.replace("[", "\\[").replace("]", "\\]")
+    safe_alt = safe_alt.replace("<", "").replace(">", "")
+    safe_path = str(path or "").replace(" ", "%20")
+    return "![" + safe_alt + "](" + safe_path + ")"
+
+
 # Typora 兼容：内联 base64 图片的最大原始图像字节数
 # 超过阈值的 base64 图片会被解码后保存到本地 images/ 目录，替换为相对路径引用。
 # 阈值与 core/image.py 中 MAX_INLINE_IMAGE_BYTES 保持一致：
@@ -2536,6 +2570,171 @@ class JsonConvert(object):
             table_lines = table_lines + table_line + f"{nl}"
         return table_lines
 
+    # ----------------------------------------------------------------------
+    # 白板/思维导图/内嵌流程图 扩展类型
+    # ----------------------------------------------------------------------
+    # 设计说明：
+    #   1. 有道云笔记 .note 的 JSON 私有格式中，"6" 字段标记节点类型；
+    #      excalidraw / drawio-ynote / mindmap 三个值表示白板或思维导图节点。
+    #   2. 现有 _covert_json_to_markdown_content 已按 "6" 动态查找 convert_<type>_func，
+    #      若不存在则回退到 convert_text_func（导致白板信息丢失）。
+    #   3. 下面 3 个新方法仅为占位输出 + 资源 URL，风格与 convert_a_func 一致：
+    #         - 不调网络（与现有 convert_*_func 风格一致，避免引入 session 依赖）
+    #         - 失败兜底返回空字符串，不抛异常
+    #         - 不修改 _covert_json_to_markdown_content 的分发逻辑
+    #   4. 独立 .drawio 文件的导出仍由 pull.py 的 FileType.DRAWIO 分支处理，
+    #      与本扩展完全独立，互不影响。
+    # ----------------------------------------------------------------------
+
+    # 资源类型 → 友好中文名
+    _WHITEBOARD_TYPE_LABEL = {
+        "excalidraw": "手绘白板",
+        "drawio-ynote": "drawio 流程图",
+        "mindmap": "思维导图",
+    }
+
+    # type ("6" 字段值) → 方法名 的映射表
+    # 解决 "6" 字段值含连字符（如 "drawio-ynote"）无法做 Python 标识符的问题；
+    # 不在此映射表中的 type，仍走原 dispatch 的 "convert_<type>_func" 字符串拼接，
+    # 所以对既有 text/h/im/a/cd/la/q/l/t 等完全无影响。
+    _WHITEBOARD_TYPE_FUNC_NAME = {
+        "drawio-ynote": "convert_drawio_ynote_func",
+    }
+
+    @classmethod
+    def _resolve_convert_func_name(cls, type_name):
+        """
+        根据 JSON "6" 字段值解析对应的 convert_*_func 方法名字符串。
+        - 若 type_name 在 _WHITEBOARD_TYPE_FUNC_NAME 中（如 drawio-ynote），返回映射的方法名
+        - 否则返回默认的 convert_<type_name>_func（与既有 dispatch 行为完全一致）
+        返回的是字符串，由调用方 getattr 使用。
+        """
+        if not type_name:
+            return ""
+        if type_name in cls._WHITEBOARD_TYPE_FUNC_NAME:
+            return cls._WHITEBOARD_TYPE_FUNC_NAME[type_name]
+        return "convert_" + type_name + "_func"
+
+    def _safe_attr(self, content, key, default=""):
+        """统一从 content 中安全取字段，避免 KeyError"""
+        try:
+            v = content.get(key, default)
+            if v is None:
+                return default
+            return v
+        except Exception:
+            return default
+
+    def _lookup_whiteboard_path(self, node_id):
+        """
+        从 self._whiteboard_map 中按节点 id 查找本地 SVG 相对路径。
+        找不到返回空串（让调用方走占位 markdown 引用块兜底）。
+        """
+        if not node_id:
+            return ""
+        m = getattr(self, "_whiteboard_map", None)
+        if not m:
+            return ""
+        try:
+            return m.get(node_id, "") or ""
+        except Exception:
+            return ""
+
+    def convert_excalidraw_func(self, content) -> str:
+        """
+        excalidraw 手绘白板：
+        - 若 self._whiteboard_map[node_id] 存在本地 SVG 路径，输出可缩放 <img>
+          标签（浏览器/查看器天然支持滚轮/触摸手势缩放）
+        - 否则回退到占位 markdown 引用块（含可点击 URL + 节点元信息）
+        字段约定：
+            content["3"]            节点 id
+            content["4"].get("u")   资源 URL
+        """
+        try:
+            node_id = self._safe_attr(content, "3")
+            attr = content.get("4", {}) or {}
+            resource_url = attr.get("u", "") if isinstance(attr, dict) else ""
+            label = self._WHITEBOARD_TYPE_LABEL.get("excalidraw", "excalidraw")
+            nl = "\r\n"
+            # 优先输出内嵌 SVG（可缩放图片）
+            local_path = self._lookup_whiteboard_path(node_id)
+            if local_path:
+                alt = label + " excalidraw " + node_id
+                return _md_image(alt, local_path) + nl
+            if not resource_url:
+                return "> [" + label + " excalidraw] 节点 " + node_id + nl
+            return (
+                "> [" + label + " excalidraw](" + resource_url + ")" + nl +
+                "> - 节点 id：`" + node_id + "`" + nl +
+                "> - 类型：excalidraw 手绘白板" + nl +
+                "> - 资源 URL：[点击在有道云笔记中打开](" + resource_url + ")" + nl
+            )
+        except Exception:
+            return ""
+
+    def convert_drawio_ynote_func(self, content) -> str:
+        """
+        drawio-ynote 流程图：
+        - 若 self._whiteboard_map[node_id] 存在本地 SVG 路径，输出 <img>
+        - 否则回退到占位 markdown 引用块
+        字段约定：
+            content["3"]            节点 id
+            content["4"].get("u")   资源 URL
+        备注：drawio-ynote 资源 content 字段是 data:image/svg+xml;base64,...
+              可直接解码出可缩放 SVG。
+        """
+        try:
+            node_id = self._safe_attr(content, "3")
+            attr = content.get("4", {}) or {}
+            resource_url = attr.get("u", "") if isinstance(attr, dict) else ""
+            label = self._WHITEBOARD_TYPE_LABEL.get("drawio-ynote", "drawio 流程图")
+            nl = "\r\n"
+            local_path = self._lookup_whiteboard_path(node_id)
+            if local_path:
+                alt = label + " drawio-ynote " + node_id
+                return _md_image(alt, local_path) + nl
+            if not resource_url:
+                return "> [" + label + " drawio-ynote] 节点 " + node_id + nl
+            return (
+                "> [" + label + " drawio-ynote](" + resource_url + ")" + nl +
+                "> - 节点 id：`" + node_id + "`" + nl +
+                "> - 类型：drawio 流程图（与独立 .drawio 同样可在 drawio 桌面版打开）" + nl +
+                "> - 资源 URL：[点击在有道云笔记中打开](" + resource_url + ")" + nl
+            )
+        except Exception:
+            return ""
+
+    def convert_mindmap_func(self, content) -> str:
+        """
+        mindmap 思维导图：
+        - 若 self._whiteboard_map[node_id] 存在本地 SVG 路径，输出 <img>
+        - 否则回退到占位 markdown 引用块
+        字段约定：
+            content["3"]            节点 id
+            content["4"].get("u")   资源 URL
+        备注：mindmap 真实结构未确认，目前仅占位；后续若有真实样本可补充解析。
+        """
+        try:
+            node_id = self._safe_attr(content, "3")
+            attr = content.get("4", {}) or {}
+            resource_url = attr.get("u", "") if isinstance(attr, dict) else ""
+            label = self._WHITEBOARD_TYPE_LABEL.get("mindmap", "思维导图")
+            nl = "\r\n"
+            local_path = self._lookup_whiteboard_path(node_id)
+            if local_path:
+                alt = label + " mindmap " + node_id
+                return _md_image(alt, local_path) + nl
+            if not resource_url:
+                return "> [" + label + " mindmap] 节点 " + node_id + nl
+            return (
+                "> [" + label + " mindmap](" + resource_url + ")" + nl +
+                "> - 节点 id：`" + node_id + "`" + nl +
+                "> - 类型：mindmap 思维导图（具体解析待真实样本验证）" + nl +
+                "> - 资源 URL：[点击在有道云笔记中打开](" + resource_url + ")" + nl
+            )
+        except Exception:
+            return ""
+
 
 class YoudaoNoteConvert(object):
     """
@@ -2636,7 +2835,7 @@ class YoudaoNoteConvert(object):
         return True
 
     @staticmethod
-    def _covert_json_to_markdown_content(file_path):
+    def _covert_json_to_markdown_content(file_path, whiteboard_map=None):
         new_content_list = []
         # 加载 json 文件
         with open(file_path, "r", encoding="utf-8") as f:
@@ -2647,20 +2846,25 @@ class YoudaoNoteConvert(object):
                 json_data = {}
 
         json_contents = json_data["5"]  # 3 代表 id，4 代表信息，5 代表内容，6 代表类型
+        # 单次实例化，把 whiteboard_map 注入实例属性（兼容老调用方不传）
+        json_converter = JsonConvert()
+        if whiteboard_map and isinstance(whiteboard_map, dict):
+            json_converter._whiteboard_map = whiteboard_map
         for content in json_contents:
             type = content.get("6")
             # 根据类型处理，无类型的为普通文本
             if type:
-                convert_func = getattr(
-                    JsonConvert(), "convert_{}_func".format(type), None
-                )
+                # 通过 _resolve_convert_func_name 解析方法名，兼容 "drawio-ynote"
+                # 这类含连字符的 type；其它 type 与原行为完全一致（默认拼接 convert_<type>_func）
+                func_name = JsonConvert._resolve_convert_func_name(type)
+                convert_func = getattr(json_converter, func_name, None) if func_name else None
                 # 如果类型没有对应转换函数，只保留文字
                 if not convert_func:
-                    line_content = JsonConvert().convert_text_func(content)
+                    line_content = json_converter.convert_text_func(content)
                 else:
                     line_content = convert_func(content)
             else:
-                line_content = JsonConvert().convert_text_func(content)
+                line_content = json_converter.convert_text_func(content)
 
             # 判断是否有内容
             if line_content:
@@ -2668,11 +2872,16 @@ class YoudaoNoteConvert(object):
         return f"\r\n\r\n".join(new_content_list)  # 换行 1 行
 
     @staticmethod
-    def covert_json_to_markdown(file_path) -> str:
+    def covert_json_to_markdown(file_path, whiteboard_map=None) -> str:
         """
         转换 Json 为 MarkDown
-        :param file_path:
-        :return:
+
+        :param file_path: .note 私有 JSON 路径
+        :param whiteboard_map: 预渲染的白板本地路径映射 {node_id: "images/<id>.svg"}；
+                               传入后，excalidraw/drawio-ynote/mindmap 节点会输出
+                               <img src="images/<id>.svg" /> 内嵌引用，SVG 天然支持
+                               滚轮/触摸手势缩放；不传则走原占位 markdown 引用块。
+        :return: 生成的 .md 绝对路径
         """
         base = os.path.splitext(file_path)[0]
         new_file_path = "".join([base, MARKDOWN_SUFFIX])
@@ -2682,7 +2891,9 @@ class YoudaoNoteConvert(object):
                 os.remove(new_file_path)
             os.rename(file_path, new_file_path)
             return False
-        new_content = YoudaoNoteConvert._covert_json_to_markdown_content(file_path)
+        new_content = YoudaoNoteConvert._covert_json_to_markdown_content(
+            file_path, whiteboard_map=whiteboard_map
+        )
         with open(new_file_path, "wb") as f:
             f.write(new_content.encode("utf-8"))
         # 删除旧文件

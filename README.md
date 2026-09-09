@@ -101,7 +101,7 @@ pip3 install -r requirements.txt
 | 参数 | 类型 | 说明 | 默认值 |
 |------|------|------|--------|
 | `local_dir` | string | 本地存放导出文件的绝对路径，留空则导出到脚本目录下的 `youdaonote/` | `""` |
-| `ydnote_dir` | string | 指定导出的有道云笔记文件夹名，留空则导出所有笔记 | `""` |
+| `ydnote_dir` | string | 指定导出的有道云笔记目录，留空则导出所有笔记。支持多级路径，用 `/` 分隔（也兼容 `\`），如 `工作/2026/项目A` | `""` |
 | `smms_secret_token` | string | SM.MS 图床 Token，留空则不上传 | `""` |
 | `is_relative_path` | bool | 附件是否使用相对路径（base64 模式下图片不受影响） | `true` |
 | `is_base64_image` | bool | 是否将图片以 base64 内嵌到 Markdown 中 | `true` |
