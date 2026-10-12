@@ -68,6 +68,20 @@ class ImagePull:
         """
         return REGEX_SPECIAL_CHARS.sub("_", filename)
 
+    @classmethod
+    def _to_relative(cls, file_path: str, folder: str) -> str:
+        """把 <任意前缀>/<folder>/<file> 截断为 <folder>/<file>
+
+        早期实现用 `path[path.find(folder):]`，两个问题：
+          1. folder 出现在路径的其它位置时（如用户本地目录就叫 images）会截错
+          2. find 返回 -1 时会退化成 `path[:-1]`，得到完全错误的路径
+        这里改为找最后一个 `<folder>/`（或 `<folder>\\`）片段，找不到则原样返回。
+        """
+        idx = max(file_path.rfind(folder + "/"), file_path.rfind(folder + "\\"))
+        if idx == -1:
+            return file_path.replace("\\", "/")
+        return file_path[idx:].replace("\\", "/")
+
     def migration_ydnote_url(self, file_path):
         """
         迁移有道云笔记文件 URL
@@ -111,15 +125,16 @@ class ImagePull:
             try:
                 image_path = self._get_new_image_path(file_path, image_url)
             except Exception as error:
+                # 单张图片失败不应中断本篇笔记后续图片与附件的迁移
                 logging.info(
                     "下载图片「{}」可能失败！请检查图片！错误提示：{}".format(image_url, format(error))
                 )
+                continue
             if image_url == image_path:
                 continue
-            # 将绝对路径替换为相对路径
+            # 本地文件路径是绝对路径时需转成相对路径（图床 URL 不处理）
             if self.is_relative_path and not self.smms_secret_token:
-                image_path = image_path[image_path.find(IMAGES):]
-
+                image_path = self._to_relative(image_path, IMAGES)
             image_path = self._url_encode(image_path)
             content = content.replace(image_url, image_path)
 
@@ -129,14 +144,20 @@ class ImagePull:
             logging.info("正在转换有道云笔记「{}」中的有道云附件链接...".format(file_path))
         for attach_name_and_url in attach_name_and_url_list:
             attach_url = attach_name_and_url[1]
-            attach_path = self._download_ydnote_url(
-                file_path, attach_url, attach_name_and_url[0]
-            )
+            try:
+                attach_path = self._download_ydnote_url(
+                    file_path, attach_url, attach_name_and_url[0]
+                )
+            except Exception as error:
+                # 单个附件失败不应中断本篇笔记后续附件迁移，更不能影响最终写回
+                logging.info(
+                    "下载附件「{}」可能失败！请检查附件！错误提示：{}".format(attach_url, format(error))
+                )
+                continue
             if not attach_path:
                 continue
-            # 将 attach_path 路径中 attachments 之前的路径去掉，只保留以 attachments 开头的之后的路径
             if self.is_relative_path:
-                attach_path = attach_path[attach_path.find(ATTACH):]
+                attach_path = self._to_relative(attach_path, ATTACH)
             content = content.replace(attach_url, attach_path)
 
         with open(file_path, "wb") as f:
@@ -278,35 +299,43 @@ class ImagePull:
             )
 
         local_file_dir = None
-        # 如果 file_name 中不包含 . 号
+        # 如果 file_path 中不包含 . 号
         if file_path.find(".") == -1:
             local_file_dir = os.path.join(self.root_local_dir or "", file_dirname).replace(
                 "\\", "/"
             )
         else:
-            # 截取字符串 file_path 中文件夹全路径(即实现在具体文件夹目录下再生成图片文件夹路径，而非在根目录生成图片文件夹路径)
-            local_file_dir = os.path.join(
-                file_path[: file_path.rfind("/")], file_dirname
-            ).replace("\\", "/")
+            # 在具体笔记所在目录下生成 images / attachments 子目录。
+            # 交给 os.path 取父目录：早期实现用 file_path[: file_path.rfind("/")]，
+            # 一旦传入的是 Windows 原生分隔符路径，rfind 返回 -1，
+            # 目录会被截成 "<笔记名>.m/images" 并在 os.mkdir 时抛 FileNotFoundError。
+            note_dir = os.path.dirname(os.path.normpath(file_path))
+            local_file_dir = os.path.join(note_dir, file_dirname).replace("\\", "/")
 
-        if not os.path.exists(local_file_dir):
-            os.mkdir(local_file_dir)
+        os.makedirs(local_file_dir, exist_ok=True)
         file_basename = os.path.basename(urlparse(url).path)
 
         # 请求后的真实的 URL 中才有东西
         realUrl = parse.parse_qs(urlparse(response.url).query)
-
+        real_name = ""
         if realUrl:
-            filename = (
-                realUrl.get("filename")[0]
-                if realUrl.get("filename")
-                else realUrl.get("download")[0]
-                if realUrl.get("download")
-                else ""
-            )
-            file_name = file_basename + filename
+            # filename / download 两个参数都可能携带真实文件名（含扩展名）
+            candidates = realUrl.get("filename") or realUrl.get("download") or []
+            real_name = (candidates[0] if candidates else "").strip()
+
+        # 文件名为「<资源id>_<真实文件名>」：
+        #   - 保留资源 id 前缀：同一笔记目录下可能出现多个同名上传文件，
+        #     少了前缀会互相覆盖导致丢图/错图
+        #   - 旧实现用字符串直接相加（file_basename + filename），
+        #     会产生 0pic0.png / 9big.png 这类难以辨认的名字
+        #   - 拿不到真实文件名时退回 <资源id><后缀>，由 Content-Type 兜底扩展名
+        name_parts = [p for p in (file_basename.strip(), real_name) if p]
+        if len(name_parts) >= 2:
+            file_name = "_".join(name_parts)
+        elif name_parts:
+            file_name = name_parts[0] + file_suffix
         else:
-            file_name = "".join([file_basename, file_suffix])
+            file_name = "unnamed" + file_suffix
 
         # 清理文件名中的特殊字符，防止 Markdown 链接截断
         file_name = self._sanitize_filename(file_name)
@@ -323,20 +352,6 @@ class ImagePull:
             return ""
 
         return local_file_path
-
-    def _set_relative_file_path(self, file_path, file_name, local_file_dir) -> str:
-        """
-        图片/附件设置为相对地址
-        :param file_path:
-        :param file_name:
-        :param local_file_dir:
-        :return:
-        """
-        note_file_dir = os.path.dirname(file_path)
-        rel_file_dir = os.path.relpath(local_file_dir, note_file_dir)
-        rel_file_path = os.path.join(rel_file_dir, file_name)
-        new_file_path = rel_file_path.replace("\\", "/")
-        return new_file_path
 
 
 class ImageUpload(object):

@@ -14,20 +14,17 @@
 
 import base64
 import hashlib
-import html
 import json
+import logging
 import math
 import os
 import re
 import struct
 
-# 内部模块（按现有项目结构相对引用）
-try:
-    from core.log import logger
-except Exception:  # 单独 import 也允许
-    import logging
-
-    logger = logging.getLogger("whiteboard_render")
+# 白板渲染阶段统一使用模块级 logger。
+# 注意：不要 import core.log（其中只有 init_logging，没有 logger），
+# 否则会永久走异常兜底分支，导致日志名不可控。
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------

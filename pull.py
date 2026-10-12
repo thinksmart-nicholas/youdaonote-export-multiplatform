@@ -14,11 +14,17 @@ from enum import Enum
 from typing import Tuple
 
 import requests
-from win32_setctime import setctime
+
+try:
+    # 非 Windows 平台（Linux / macOS）没有 win32_setctime，不能无条件导入，
+    # 否则在这些平台上 import pull 就会直接失败
+    from win32_setctime import setctime
+except Exception:
+    setctime = None
 
 from core import log
 from core.api import YoudaoNoteApi
-from core.common import get_script_directory
+from core.common import get_script_directory, resolve_data_file
 from core.covert import YoudaoNoteConvert
 from core.image import ImagePull
 from core.whiteboard_render import process_and_save as _whiteboard_process_and_save
@@ -26,8 +32,19 @@ from core.whiteboard_render import process_and_save as _whiteboard_process_and_s
 __author__ = "Depp Wang (deppwxq@gmail.com)"
 __github__ = "https//github.com/DeppWang/youdaonote-pull"
 
-REGEX_SYMBOL = re.compile(r'[\\/:\*\?"<>\|]')  # 符号：\ / : * ? " < > |
 MARKDOWN_SUFFIX = ".md"
+
+# config.json 必需项：缺失即报错
+REQUIRED_CONFIG_KEYS = [
+    "local_dir",
+    "ydnote_dir",
+    "smms_secret_token",
+    "is_relative_path",
+]
+# config.json 可选项：缺失时用默认值补齐
+OPTIONAL_CONFIG_KEYS = {
+    "is_base64_image": False,
+}
 
 
 class FileType(Enum):
@@ -66,25 +83,30 @@ class YoudaoNotePull(object):
         config_path = (
             config_path
             if config_path
-            else os.path.join(get_script_directory(), "config.json")
+            else resolve_data_file("config.json")
         )
         with open(config_path, "rb") as f:
             config_str = f.read().decode("utf-8")
 
         try:
             config_dict = json.loads(config_str)
-        except:
+        except Exception:
             return (
                 {},
                 "请检查「config.json」格式是否为 utf-8 格式的 json！建议使用 Sublime 编辑「config.json」",
             )
 
-        key_list = ["local_dir", "ydnote_dir", "smms_secret_token", "is_relative_path", "is_base64_image"]
-        if key_list != list(config_dict.keys()):
+        # 必需项缺失才报错；可选项补齐默认值，避免新增配置就让老配置失效
+        missing_keys = [key for key in REQUIRED_CONFIG_KEYS if key not in config_dict]
+        if missing_keys:
             return (
                 {},
-                "请检查「config.json」的 key 是否分别为 local_dir, ydnote_dir, smms_secret_token, is_relative_path, is_base64_image",
+                "「config.json」缺少必需的配置项：{}，请参考「config.example.json」补齐".format(
+                    "、".join(missing_keys)
+                ),
             )
+        for key, default_value in OPTIONAL_CONFIG_KEYS.items():
+            config_dict.setdefault(key, default_value)
         return config_dict, ""
 
     def _check_local_dir(self, local_dir, test_default_dir=None) -> Tuple[str, str]:
@@ -188,7 +210,7 @@ class YoudaoNotePull(object):
             return "", error_msg
         self.smms_secret_token = config_dict["smms_secret_token"]
         self.is_relative_path = config_dict["is_relative_path"]
-        self.is_base64_image = config_dict.get("is_base64_image", False)
+        self.is_base64_image = config_dict["is_base64_image"]
         return self._get_ydnote_dir_id(ydnote_dir=config_dict["ydnote_dir"])
 
     def _judge_type(self, file_id, youdao_file_suffix) -> Enum:
@@ -260,43 +282,48 @@ class YoudaoNotePull(object):
         name = del_regex_symbol.sub("", name)
         return name
 
-    def pull_dir_by_id_recursively(self, dir_id, local_dir):
+    def _restore_file_times(self, file_path, create_time, modify_time) -> None:
         """
-        根据目录 ID 循环遍历下载目录下所有文件
-        :param dir_id:
-        :param local_dir: 本地目录
-        :return: error_msg
+        把有道云笔记的时间回填到本地文件。
+
+        必须同时回填修改时间（mtime）：`_get_file_action` 依赖
+        `modify_time <= os.path.getmtime()` 判断是否需要更新，只回填创建时间
+        会让本地 mtime 停在本次写入时刻，导致笔记更新后仍被判为「跳过」。
+
+        Windows 下 os.utime 无法设置创建时间（ctime），需要额外用
+        win32_setctime 补齐，且必须放在 os.utime 之后，否则会被覆盖。
+
+        :param file_path: 本地文件路径
+        :param create_time: 有道云笔记创建时间（秒级时间戳）
+        :param modify_time: 有道云笔记修改时间（秒级时间戳）
         """
-        dir_info = self.youdaonote_api.get_dir_info_by_id(dir_id)
         try:
-            entries = dir_info["entries"]
-        except KeyError:
-            raise KeyError("有道云笔记修改了接口地址，此脚本暂时不能使用！请提 issue")
-        for entry in entries:
-            file_entry = entry["fileEntry"]
-            id = file_entry["id"]
-            name = file_entry["name"]
-            if file_entry["dir"]:
-                sub_dir = os.path.join(local_dir, name).replace("\\", "/")
-                if not os.path.exists(sub_dir):
-                    os.mkdir(sub_dir)
-                self.pull_dir_by_id_recursively(id, sub_dir)
-            else:
-                modify_time = file_entry["modifyTimeForSort"]
-                create_time = file_entry["createTimeForSort"]
-                self._add_or_update_file(id, name, local_dir, modify_time, create_time)
+            os.utime(file_path, (create_time, modify_time))
+        except Exception as error:
+            logging.info("回填「{}」修改时间失败：{}".format(file_path, format(error)))
+
+        if platform.system() != "Windows" or setctime is None:
+            return
+        try:
+            setctime(file_path, create_time)
+        except Exception as error:
+            logging.info("回填「{}」创建时间失败：{}".format(file_path, format(error)))
 
     def _add_or_update_file(
         self, file_id, file_name, local_dir, modify_time, create_time
     ):
         """
         新增或更新文件
+
         :param file_id:
         :param file_name:
         :param local_dir:
         :param modify_time:
         :param create_time:
-        :return:
+        :return: (file_action, local_file_path, error_msg)
+                 file_action 为 CONTINUE 表示已跳过未更新；
+                 error_msg 非空表示该文件处理失败。
+                 命令行入口不使用返回值，返回值供导出引擎统计进度。
         """
         file_name = self._optimize_file_name(file_name)
         youdao_file_suffix = os.path.splitext(file_name)[1]  # 笔记后缀
@@ -323,7 +350,7 @@ class YoudaoNotePull(object):
 
         file_action = self._get_file_action(local_file_path, modify_time)
         if file_action == FileActionEnum.CONTINUE:
-            return
+            return file_action, local_file_path, ""
         if file_action == FileActionEnum.UPDATE:
             # 考虑到使用 f.write() 直接覆盖原文件，在 Windows 下报错（WinError 183），先将其删除
             os.remove(local_file_path)
@@ -335,18 +362,12 @@ class YoudaoNotePull(object):
                 file_type,
                 youdao_file_suffix,
             )
-            if file_action == FileActionEnum.CONTINUE:
-                logging.debug(
-                    "{}「{}」{}".format(file_action.value, local_file_path, tip)
-                )
-            else:
-                logging.info("{}「{}」{}".format(file_action.value, local_file_path, tip))
+            # 上面 CONTINUE 已提前返回，此处只可能是 ADD / UPDATE
+            logging.info("{}「{}」{}".format(file_action.value, local_file_path, tip))
 
             # 本地文件时间设置为有道云笔记的时间
-            if platform.system() == "Windows":
-                setctime(local_file_path, create_time)
-            else:
-                os.utime(local_file_path, (create_time, modify_time))
+            self._restore_file_times(local_file_path, create_time, modify_time)
+            return file_action, local_file_path, ""
 
         except Exception as error:
             logging.info(
@@ -354,6 +375,7 @@ class YoudaoNotePull(object):
                     file_action.value, original_file_path, format(error)
                 )
             )
+            return file_action, local_file_path, format(error)
 
     def _gen_drawio_companion_md(self, file_path: str) -> None:
         """
@@ -515,6 +537,9 @@ class YoudaoNotePull(object):
 
 
 if __name__ == "__main__":
+    # 局部导入：core.exporter 反过来会 import pull，放在模块顶层会形成循环导入
+    from core.exporter import Exporter
+
     log.init_logging()
 
     start_time = int(time.time())
@@ -526,9 +551,18 @@ if __name__ == "__main__":
             logging.info(error_msg)
             sys.exit(1)
         logging.info("正在 pull，请稍后 ...")
-        youdaonote_pull.pull_dir_by_id_recursively(
-            ydnote_dir_id, youdaonote_pull.root_local_dir
-        )
+
+        # 与图形界面共用同一套导出引擎：配置解析、登录、目录定位沿用
+        # YoudaoNotePull，遍历与导出交给 Exporter（支持选择性导出与进度回调）
+        exporter = Exporter()
+        exporter.api = youdaonote_pull.youdaonote_api
+        exporter.pull = youdaonote_pull
+        tree, error_msg = exporter.load_tree(ydnote_dir_id)
+        if error_msg:
+            logging.info(error_msg)
+            sys.exit(1)
+        report = exporter.export(tree, {ydnote_dir_id}, youdaonote_pull.root_local_dir)
+        logging.info("导出结果：{}".format(report))
     except requests.exceptions.ProxyError:
         logging.info(
             "请检查网络代理设置；也有可能是调用有道云笔记接口次数达到限制，请等待一段时间后重新运行脚本，若一直失败，可删除「cookies.json」后重试"

@@ -1,4 +1,7 @@
+# 需要 Python >= 3.9：core/covert 中使用了内置泛型注解（如 tuple[str, callable]）
+flet>=1.0
+selenium>=4.11
 requests>=2.32.0
 markdownify==0.5.1
 Brotli>=1.1.0
-win32-setctime==1.1.0
+win32-setctime==1.1.0; sys_platform == "win32"

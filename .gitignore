@@ -1,0 +1,43 @@
+# 敏感信息：登录态与图床 token，切勿提交
+# accounts.db 存的是真实登录 Cookie（YNOTE_CSTK / YNOTE_LOGIN / YNOTE_SESS），
+# 且 resolve_data_dir() 优先使用项目根目录，故该文件就在仓库根
+cookies.json
+config.json
+accounts.db
+*.sqlite
+*.sqlite3
+.env
+
+# flet 运行时 / selenium 浏览器临时目录
+# 体积大（浏览器用户数据目录），且可能含浏览隐私数据
+**/.flet/
+
+# 打包产物（flet pack / PyInstaller）
+dist/
+build/
+*.spec
+
+# 运行产物
+logs/
+*.log
+tools/baseline/
+test/_*.md
+# 导出目录：存放全部笔记正文，绝不能提交
+youdaonote/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 虚拟环境
+venv*/
+.venv/
+env/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
