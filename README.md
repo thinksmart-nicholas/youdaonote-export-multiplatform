@@ -279,9 +279,6 @@ youdaonote-export-multiplatform/
 ├── .gitignore               # 排除 Cookie / 账户库 / 配置 / 导出目录 / 日志 / 打包产物等
 ├── .gitattributes           # Git 换行符与文件属性配置
 ├── README.md                # 项目说明
-├── HANDOFF.md               # 开发交接文档
-├── 白板导出问题分析.md        # 白板导出问题排查记录
-├── 白板渲染修复验证.html      # 白板渲染修复的验证页面
 ├── YoudaoNoteExport.spec    # PyInstaller 打包配置（自动生成，已被 .gitignore 排除）
 ├── ui/                      # 图形界面（flet），入口 ui/main.py
 │   ├── main.py              # GUI 入口：窗口配置与页面路由（login → tree → export）
