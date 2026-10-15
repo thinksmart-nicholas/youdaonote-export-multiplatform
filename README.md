@@ -1,19 +1,78 @@
-# youdaonote-export-multiplatform
+# 有道云笔记批量导出工具 · 图形界面版
 
-将有道云笔记批量导出为本地 Markdown 文件，图片自动内嵌为 base64，文件完全自包含，可直接导入 ima、Notion 等云端知识库。
+**youdaonote-export-multiplatform** —— 一键把有道云笔记**完整**导出为本地 Markdown：图片自动内嵌为 base64、富文本格式原样保留，导出的文件完全自包含，可直接导入 **ima / 语雀 / Notion / Obsidian** 等知识库。
 
-> 基于 [liukui2020/youdaonote-md-exporter](https://github.com/liukui2020/youdaonote-md-exporter) 重构，重点完善了原版导出md丢失笔记的富文本格式的问题。
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![GUI](https://img.shields.io/badge/GUI-Flet-9cf)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+> **和命令行脚本最大的区别：内置图形界面。** 不用敲命令、不用手动按 F12 抓 Cookie、不用装 Python —— 下载 → 登录 → 导出，三步搞定。
 
 ---
 
-## 重大更新说明
+## 为什么选它
+
+| 能力 | 传统命令行导出脚本 | 本工具 |
+| --- | --- | --- |
+| 使用方式 | 纯命令行，需手工编辑配置文件 | ✅ 图形界面，点选即可 |
+| 获取 Cookie | 手动 F12 复制，步骤繁琐易失效 | ✅ 自动拉起浏览器登录，扫码 / 账号密码 |
+| 登录态 | 每次手动粘贴 | ✅ 自动保存，后续免密登录 |
+| 富文本格式 | 常丢失（加粗、颜色、表格、代码块乱掉） | ✅ 内嵌 HTML 完整保留 |
+| 图片 | 常需自建 / 配置图床 | ✅ 默认 base64 内嵌，单文件自包含 |
+| 运行环境 | 必须装 Python 与一堆依赖 | ✅ 打包为可执行文件，免环境 |
+| 多账号 | 不支持 | ✅ 账号一致性校验，防串号 |
+| 平台 | 通常仅 Windows | ✅ Windows / macOS / Linux |
+
+<!--
+  【建议补充截图 —— 这是目前最影响 star 的一点】
+  工具类项目没有效果图，访客 3 秒内无法建立信任。请补 3 张图 + 1 个 GIF，
+  图片放到仓库 docs/screenshots/ 目录，然后把下面含 img 的代码块取消注释即可：
+
+  1. 登录页        docs/screenshots/login.png
+  2. 目录树勾选页   docs/screenshots/tree.png
+  3. 导出进度/结果页 docs/screenshots/export.png
+  4. 10 秒演示 GIF  docs/screenshots/demo.gif （打开→登录→勾选→导出→打开生成的 .md）
+
+  <p align="center">
+    <img src="docs/screenshots/login.png" width="45%"/>
+    <img src="docs/screenshots/tree.png" width="45%"/>
+  </p>
+  <p align="center"><img src="docs/screenshots/demo.gif" width="80%"/></p>
+-->
+
+---
+
+## 下载与安装（推荐普通用户）
+
+到 **[Releases](https://github.com/thinksmart-nicholas/youdaonote-export-multiplatform/releases/latest)** 下载对应平台的现成程序，**无需安装 Python 环境**：
+
+| 平台 | 文件 | 使用方式 |
+| --- | --- | --- |
+| Windows | `YoudaoNoteExporter-Windows.exe` | 双击运行 |
+| macOS | `YoudaoNoteExporter-macOS.zip` | 解压后把 `YoudaoNoteExporter.app` 拖入「应用程序」 |
+| Linux | `YoudaoNoteExporter-Linux` | `chmod +x` 后运行 |
+
+**三步上手：**
+
+1. **登录** —— 打开程序点「登录」，在弹出的浏览器里完成有道云笔记登录，Cookie 自动抓取（首次运行会自动下载匹配的浏览器驱动，默认已开启 npmmirror 加速下载，请保持联网）。
+2. **选笔记** —— 在目录树里勾选要导出的笔记 / 文件夹（可全选）。
+3. **导出** —— 选择本地保存目录，点击导出，完成后到该目录查看 `.md` 文件。
+
+> Releases 中的安装包由仓库内 [`.github/workflows/build.yml`](.github/workflows/build.yml) 自动构建：推送一个 `v*` 标签（例如 `v1.0.0`），三平台产物会自动上传到 Release。
+
+> 想从源码运行、参与开发或自行打包？见下方 [快速开始（源码 / 开发模式）](#快速开始源码--开发模式) 与 [打包为桌面应用](#打包为桌面应用windows--macos--linux)。
+
+---
+
+## 更新日志
 
 > [!CAUTION]
-> **近期重大更新，建议首次阅读本仓库前先看这一段。**
+> **近期重大更新。**
 >
 > 1. **项目名称变更**：项目名称正式改为 **youdaonote-export-multiplatform**（原 youdaonote-to-md），后续文档与发布统一使用新名称。
 > 2. **新增图形界面（UI）**：基于 [flet](https://flet.dev) 框架新增了可视化界面，现在用户可以直接通过图形化界面完成登录、选择笔记与导出操作，无需手工编辑配置文件。具体介绍详见「图形界面（GUI）」小节。
-> 3. **新增打包功能**：支持将源码打包成独立可执行文件，方便分发；支持 Windows / macOS / Linux 三个平台。其中 **Windows 平台已测试通过**，其它平台待测，也欢迎用户自行测试并反馈。具体打包方式详见「打包为桌面应用（Windows / macOS / Linux）」小节。
+> 3. **新增打包功能**：支持将源码打包成独立可执行文件，方便分发；支持 Windows / macOS / Linux 三个平台。其中 **Windows/Linux平台已测试通过**，Mac平台待测，也欢迎用户自行测试并反馈。具体打包方式详见「打包为桌面应用（Windows / macOS / Linux）」小节。
 > 4. **重构代码结构**：拆分了原有大文件，并增加了开发模式下的 log 功能。
 
 ---
@@ -22,6 +81,7 @@
 
 ### 核心功能
 
+- 图形化界面和命令行两套操作方式
 - 按原目录结构批量导出所有有道云笔记到本地
 - 笔记格式自动转换：XML / JSON / HTML → Markdown
 - 增量导出：仅下载新增或修改的笔记，跳过未更新的文件
@@ -38,27 +98,109 @@
 
 ### 兼容性
 
-- 兼容 Python 3.8+（已在 3.13 上验证通过）
+- 兼容 Python 3.9+（已在 3.13 上验证通过）
 - 兼容 Windows / macOS / Linux
 - 修复 Windows 下 `os.rename` 目标已存在导致 `.note` 残留的问题
 
-## 快速开始
+## 前置条件
 
-### 1. 安装依赖
+从源码运行或自行打包，本机需要先具备 **Python 3.9+** 与 **pip**。
+普通用户直接下载 [Releases](https://github.com/thinksmart-nicholas/youdaonote-export-multiplatform/releases/latest) 里的现成程序即可，无需任何环境。
 
-需要 Python 3.8+（推荐 3.11+），创建虚拟环境并安装依赖：
+### 1. 安装 Python 3.9+
+
+| 平台 | 安装命令 |
+| --- | --- |
+| Windows | 到 [python.org](https://www.python.org/downloads/windows/) 下载安装包，**安装时务必勾选 `Add python.exe to PATH`**（否则命令行找不到 `python` / `pip`） |
+| macOS | `brew install python`（Homebrew）或 python.org 官方安装包 |
+| Linux（Debian / Ubuntu） | `sudo apt install python3 python3-venv` |
+| Linux（Fedora） | `sudo dnf install python3 python3-pip` |
+| Linux（Arch） | `sudo pacman -S python` |
+
+> 提示：Debian/Ubuntu 需带 `python3-venv` 才能创建虚拟环境，详见下方「创建虚拟环境」。
+
+安装后验证：
 
 ```shell
+python3 --version    # Windows 上为 python --version，应输出 3.9+
+```
+
+### 2. 安装 pip
+
+Python 3.4+ 的官方安装包已自带 pip；若因精简安装或发行版拆分导致 `pip` 命令不可用，按平台补装：
+
+```shell
+# Windows：Python 自带 pip，缺失时用 ensurepip 修复
+python -m ensurepip --upgrade
+```
+
+```shell
+# macOS（Homebrew 的 python 自带 pip；缺失时）
+python3 -m ensurepip --upgrade
+```
+
+```shell
+# Linux
+# Debian / Ubuntu：
+sudo apt install python3-pip
+# Fedora：
+sudo dnf install python3-pip
+# Arch（python 包已含 pip；缺失时）：
+sudo pacman -S python-pip
+```
+
+验证 pip 可用：
+
+```shell
+pip3 --version       # Windows 上为 pip --version
+```
+
+## 创建虚拟环境
+
+后续统一用虚拟环境隔离依赖，避免污染系统 Python。请在**项目源码根目录**（即包含 `requirements.txt` 的那一层）下创建并激活 venv：
+
+```shell
+# 先进入源码根目录
+cd youdaonote-export-multiplatform
+
 # Windows
 python -m venv venv
 venv\Scripts\activate
+
+# macOS / Linux
+python3 -m venv venv
+source venv/bin/activate
+```
+
+激活成功后，命令行提示符前会出现 `(venv)`，表示后续 `pip` 安装都只作用于该环境。
+
+> **Ubuntu / Debian 创建虚拟环境报错 `ensurepip is not available`？**
+> 执行 `python3 -m venv venv` 若提示 *"The virtual environment was not created
+> successfully because ensurepip is not available"*，是因为 Debian/Ubuntu 把 `venv`
+> 拆成了独立包，最小化安装没带 `python3-venv`。解决办法就是补装它：
+> ```shell
+> sudo apt install python3-venv
+> ```
+> 装好后重新 `python3 -m venv venv` 即可。
+>
+> **macOS 是否有同样问题？** 一般没有。Homebrew 的 `python`（`brew install python`）
+> 与 python.org 官方安装包都自带 `ensurepip` 和 `venv`，`python3 -m venv venv` 开箱即用。
+> 只有用了被裁剪过的 Python 才可能缺 `ensurepip`，此时用 `python3 -m ensurepip --upgrade`
+> 即可修复（见上方「安装 pip」）。
+
+## 快速开始（源码 / 开发模式）
+
+### 1. 安装依赖
+
+需要 Python 3.9+（推荐 3.11+）。已按上方「创建虚拟环境」创建并激活 venv 后，安装依赖：
+
+```shell
+# Windows（已激活 venv）
 pip install -r requirements.txt
 ```
 
 ```shell
-# macOS / Linux
-python3 -m venv venv
-. venv/bin/activate
+# macOS / Linux（已激活 venv）
 pip3 install -r requirements.txt
 ```
 
@@ -66,7 +208,8 @@ pip3 install -r requirements.txt
 
 | 依赖 | 版本要求 | 用途 |
 |------|----------|------|
-| flet | >=1.0 | 图形界面（GUI），打包桌面应用所需 |
+| flet | ==1.0.4 | 图形界面（GUI）核心库；其自带的 `flet` 命令即打包用的 CLI |
+| flet-desktop | ==1.0.4 | 桌面客户端（flet 核心包不含）。`flet run` 与 `flet pack` 都需要 |
 | selenium | >=4.11 | 网页登录抓取 Cookie（GUI 登录页使用） |
 | requests | >=2.32.0 | HTTP 请求（兼容 Python 3.13） |
 | markdownify | ==0.5.1 | HTML 转 Markdown |
@@ -274,12 +417,16 @@ youdaonote-export-multiplatform/
 ├── config.example.json      # 配置样例模板
 ├── cookies.json             # 有道云笔记 Cookie（敏感信息，已被 .gitignore 排除）
 ├── accounts.db              # GUI 账户 Cookie 本地库（SQLite，敏感信息，已被 .gitignore 排除）
-├── requirements.txt         # Python 依赖（需 Python >= 3.9）
+├── requirements.txt         # Python 运行时依赖（需 Python >= 3.9）
+├── requirements-build.txt   # 打包专用依赖（= requirements.txt + 锁定版 PyInstaller）
 ├── LICENSE                  # MIT 许可证
 ├── .gitignore               # 排除 Cookie / 账户库 / 配置 / 导出目录 / 日志 / 打包产物等
 ├── .gitattributes           # Git 换行符与文件属性配置
+├── .github/                 # GitHub Actions 工作流（三平台自动打包）
+│   └── workflows/
+│       └── build.yml        # 推 tag / 手动触发：出 Windows / macOS / Linux 安装包并挂到 Release
 ├── README.md                # 项目说明
-├── YoudaoNoteExport.spec    # PyInstaller 打包配置（自动生成，已被 .gitignore 排除）
+├── YoudaoNoteExporter.spec    # PyInstaller 打包配置（自动生成，已被 .gitignore 排除）
 ├── ui/                      # 图形界面（flet），入口 ui/main.py
 │   ├── main.py              # GUI 入口：窗口配置与页面路由（login → tree → export）
 │   ├── login_view.py        # 登录页：cookies.json 导入 + Selenium 网页登录（含驱动镜像加速）
@@ -303,6 +450,7 @@ youdaonote-export-multiplatform/
 │   ├── common.py            # 通用工具函数（项目根目录定位）
 │   └── log.py               # 日志配置（输出到文件和终端）
 ├── tools/                   # 维护工具
+│   ├── install-linux.sh     # Linux 安装脚本（可执行文件 / .desktop / 图标 → 标准位置）
 │   ├── list_notes.py        # 列出云端笔记目录树（只读元信息，不下载内容）
 │   ├── make_baseline.py     # golden 基线工具（校验转换输出是否变化）
 │   ├── dump_login_headers.py    # 登录请求头抓取（排查用）
@@ -319,7 +467,7 @@ youdaonote-export-multiplatform/
 │   ├── test-convert.json    # JSON 转换样本（合成数据）
 │   ├── Zygote进程的作用.note  # 白板端到端样本（资源 URL 已脱敏为 example.com）
 │   └── whiteboard_samples/  # 白板二进制资源样本
-├── other/                   # 打包图标资源目录（放入 icon.ico / icon.icns / icon.png 生效）
+├── other/                   # 打包图标资源（icon.ico / icon.icns / icon.png 及 Linux 用的 icons/hicolor 多尺寸图标树）
 ├── logs/                    # 运行日志（自动生成）
 └── youdaonote/              # 导出目录（自动生成，已被 .gitignore 排除）
 ```
@@ -360,41 +508,27 @@ youdaonote/
 用 `build.py`（封装 `flet pack`，底层是 PyInstaller）可将其打包成各平台的独立可执行程序，
 目标机器无需安装 Python。
 
-### 前置条件
+### 安装打包依赖
 
-- Python 3.9+（`requirements.txt` 的要求）
-- **安装 PyInstaller**：`flet pack` 只是 PyInstaller 的封装，未安装时会报
-  `Please install PyInstaller module to use flet pack command`：
+> Python 与 pip 的安装见上方「前置条件」；虚拟环境的**创建与激活见上方「创建虚拟环境」**，
+> 无需重建——`requirements-build.txt` 已内含 `requirements.txt`，在同一个已激活的 venv 里
+> 直接补装打包依赖即可：
 
 ```shell
-# Windows
-pip install pyinstaller
+# Windows（已激活 venv）
+pip install -r requirements-build.txt
 ```
 
 ```shell
-# macOS / Linux
-pip3 install pyinstaller
+# macOS / Linux（已激活 venv）
+pip3 install -r requirements-build.txt
 ```
 
-  > PyInstaller 是**构建期依赖**，不在 `requirements.txt` 中（那里只放运行时依赖），需单独安装。
-  > Windows 下它会自动带上 `pefile`、`pywin32-ctypes` 等依赖，无需额外处理；
-  > 若后续启用自定义图标，`flet pack` 会用到其中的 `pefile`。
-
-- 安装**全部**运行时依赖（GUI 与网页登录还需要 `flet`、`selenium`）：
-
-```shell
-# Windows
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-```shell
-# macOS / Linux
-python3 -m venv venv
-. venv/bin/activate
-pip3 install -r requirements.txt
-```
+  > **PyInstaller 是构建期依赖**，因此放在单独的 `requirements-build.txt`，不污染运行时依赖：
+  > 只想运行源码 / GUI 的用户装 `requirements.txt` 即可。
+  > 未安装时 `flet pack` 会报 `Please install PyInstaller module to use flet pack command`。
+  > Windows 下 PyInstaller 会自动带上 `pefile`、`pywin32-ctypes`，macOS 带 `macholib`，
+  > 无需额外处理；启用自定义图标时 `flet pack` 会用到其中的 `pefile`。
 
 > **必须在目标平台本机打包**：Windows 打 exe、macOS 打 `.app`、Linux 打可执行文件。
 > `build.py` 已内置 `--collect-data selenium`，会把对应平台的 `selenium-manager` 二进制一并打进包；
@@ -412,16 +546,16 @@ python build.py --distpath out  # 指定产物输出目录（默认 ./dist）
 
 | 平台 | 产物 |
 |------|------|
-| Windows | `dist/YoudaoNoteExport.exe` |
-| macOS | `dist/YoudaoNoteExport.app` |
-| Linux | `dist/YoudaoNoteExport`（可执行文件） |
+| Windows | `dist/YoudaoNoteExporter.exe` |
+| macOS | `dist/YoudaoNoteExporter.app` |
+| Linux | `dist/YoudaoNoteExporter`（可执行文件） |
 
 ### Windows
 
 1. 安装 Python 3.9+（安装时勾选 "Add python.exe to PATH"）
 2. 按上文创建虚拟环境并安装依赖
 3. 执行打包：`python build.py`
-4. 双击 `dist\YoudaoNoteExport.exe` 运行
+4. 双击 `dist\YoudaoNoteExporter.exe` 运行
 5. 自定义程序图标：把图标放到 `other\icon.ico` 后重新打包
    （`build.py` 检测到文件存在才会自动带上，否则使用默认图标）
 
@@ -432,28 +566,168 @@ python build.py --distpath out  # 指定产物输出目录（默认 ./dist）
 
 1. 安装 Python 3.9+（`brew install python` 或官网安装包）
 2. 创建虚拟环境并安装依赖
-3. 执行打包：`python3 build.py`，产物为 `dist/YoudaoNoteExport.app`
+3. 执行打包：`python3 build.py`，产物为 `dist/YoudaoNoteExporter.app`
 4. 自定义程序图标：放到 `other/icon.icns` 后重新打包
-5. 首次运行：应用未签名，需**右键 → 打开**，或在「系统设置 → 隐私与安全性」中点击「仍要打开」
-6. Apple Silicon（M1/M2/M3）请在 arm64 环境的 Python 下打包，否则产物会以 Rosetta 转译运行
+5. Apple Silicon（M1/M2/M3）请在 arm64 环境的 Python 下打包，否则产物会以 Rosetta 转译运行
+
+### 关于 macOS 未签名 / 未公证
+
+本项目的打包产物**未做代码签名，也未提交 Apple 公证（Notarization）**。完整签名需要付费的
+Apple Developer 账号（`codesign --sign` + `notarytool submit`），因此当前分发的 `.app` 在
+首次打开时会被 Gatekeeper 拦截。两种解除方式：
+
+**方式一：右键打开（适合本地打包产物）**
+
+1. 在「访达（Finder）」里找到 `YoudaoNoteExporter.app`，**不要双击**，而是**右键（或按住 Control 单击）**
+2. 在弹出菜单中选择「打开」
+3. 系统会弹出「无法验证开发者」的警告，点击「打开」即可
+4. 之后该 app 已被记录为可信，后续双击即可正常启动
+
+若右键菜单没有「打开」项，也可走系统设置：苹果菜单 →「系统设置 → 隐私与安全性」，
+在「安全性」区域会出现本次拦截记录，点击「仍要打开」。
+
+**方式二：移除 quarantine 属性（适合从 Release 下载的压缩包）**
+
+从浏览器下载并解压的 `.app` 会被打上 quarantine 标记（`com.apple.quarantine`），
+右键打开也常被拦。在终端执行以下命令清除该标记即可正常打开：
+
+```shell
+# 解压后进入 app 所在目录
+xattr -cr YoudaoNoteExporter.app
+# 若仍提示已损坏，可再显式删除 quarantine 属性：
+sudo xattr -rd com.apple.quarantine YoudaoNoteExporter.app
+```
+
+> 说明：以上只是解除系统拦截，并不改变"未签名"的本质。若要彻底免提示，需自行用
+> Apple Developer 证书签名并公证（不在本项目的自动构建范围内）。
 
 ### Linux
 
 1. 安装 Python 3.9+ 与 venv 模块（Debian/Ubuntu：`sudo apt install python3 python3-venv`）
 2. 创建虚拟环境并安装依赖
-3. 执行打包：`python3 build.py`，产物为 `dist/YoudaoNoteExport`
+3. 执行打包：`python3 build.py`，产物为 `dist/YoudaoNoteExporter`
 4. 赋予可执行权限并运行：
 
 ```shell
-chmod +x dist/YoudaoNoteExport
-./dist/YoudaoNoteExport
+chmod +x dist/YoudaoNoteExporter
+./dist/YoudaoNoteExporter
 ```
 
-5. 自定义图标：Linux 只识别 `.png`，放到 `other/icon.png` 后重新打包
-   （会与自动生成的 `.desktop` 一起用于启动器）
+5. 自定义图标：Linux 只识别 `.png`，放到 `other/icon.png` 后重新打包。
+   打包时 `build.py` 会在 `dist/` 下自动生成 `YoudaoNoteExporter.desktop` 启动器
+   （含图标、分类等元数据），已随产物交付；把它和可执行文件放在同一目录，
+   即可在桌面环境添加到启动器 / 程序菜单。
 
-> flet 桌面版依赖 GTK3 等系统库。若启动提示缺少 `.so`，用发行版包管理器安装对应运行时
-> （如 Debian/Ubuntu：`sudo apt install libgtk-3-0`）。
+### 在 Linux 上安装（图标与启动器）
+
+**只构建、不安装的话，图标不会显示**——这是 Linux 图标机制与 Windows/macOS 的根本差异：
+
+| 差异点 | Windows / macOS | Linux |
+| --- | --- | --- |
+| 图标存放 | 嵌进 exe / `.app` | **不嵌进可执行文件**，单独放在 hicolor 主题目录 |
+| `.desktop` 的 `Icon=` | — | 写的是**图标名**，桌面环境只从主题目录按尺寸查取 |
+| `.desktop` 生效位置 | — | 只扫描 `applications/` 目录，放在程序旁边**不会被扫到** |
+
+所以 `dist/` 里的产物直接双击能跑，但**图标是占位图、也不会出现在应用菜单**。
+要让图标正常显示并出现在菜单，需要把三者分别装到标准位置。
+
+#### 方式一：用安装脚本（推荐）
+
+```shell
+python3 build.py                  # 先构建
+bash tools/install-linux.sh       # 默认取 ./dist，装到 ~/.local（无需 root）
+```
+
+脚本会把三样东西装到正确位置：可执行文件 → `~/.local/bin/`、
+`.desktop` → `~/.local/share/applications/`、图标 → `~/.local/share/icons/hicolor/`，
+并刷新图标缓存与 desktop 数据库。之后即可在应用菜单看到带图标的 YoudaoNoteExporter。
+
+```shell
+# 其它用法
+sudo PREFIX=/usr/local bash tools/install-linux.sh   # 系统级安装（所有用户）
+bash tools/install-linux.sh /path/to/dist            # 指定产物目录
+bash tools/install-linux.sh --uninstall              # 卸载
+```
+
+#### 方式二：从 Release 产物手动安装
+
+Release 中附带 `icons-hicolor.tar.gz`，内含 hicolor 多尺寸图标树
+（16 / 22 / 24 / 32 / 48 / 64 / 128 / 256 / 512）：
+
+```shell
+# 进入产物所在目录后执行
+tar -xzf icons-hicolor.tar.gz                    # 解压出 icons/hicolor/
+cp -r icons/hicolor/* ~/.local/share/icons/hicolor/
+gtk-update-icon-cache ~/.local/share/icons/hicolor 2>/dev/null || true
+
+# 顺带把程序与 .desktop 也装好，否则只是图标能显示、菜单里仍找不到
+cp YoudaoNoteExporter-Linux ~/.local/bin/YoudaoNoteExporter
+cp YoudaoNoteExporter.desktop ~/.local/share/applications/
+```
+
+安装到系统级（所有用户，需 root）：
+
+```shell
+sudo cp -r icons/hicolor/* /usr/share/icons/hicolor/
+sudo gtk-update-icon-cache /usr/share/icons/hicolor
+```
+
+也可以用 `xdg-icon-resource` 逐个尺寸安装图标：
+
+```shell
+for s in 16 22 24 32 48 64 128 256 512; do
+  xdg-icon-resource install --size $s icons/hicolor/${s}x${s}/apps/YoudaoNoteExporter.png YoudaoNoteExporter
+done
+```
+
+> 图标源文件与生成脚本见 `other/`：`other/icon.png`（1024 源图）、
+> `other/icons/hicolor/`（各尺寸）、`other/make_icon.py`（重新生成）。
+
+> **关于 Dock 图标**
+>
+> 装好上面的启动器后，**应用菜单**里的图标会正常显示。但运行中的窗口要在 Dock / 任务栏
+> 也显示图标，靠的是 `.desktop` 的 `StartupWMClass` 与窗口真实身份匹配。
+>
+> 注意：flet 的预编译桌面客户端把应用 ID 固化为 `com.appveyor.flet`，GTK 据此派生
+> X11 的 `WM_CLASS` 与 Wayland 的 `app_id`；实测设置 `FLET_APP_ID` 环境变量**并不能**
+> 改变它（客户端在内部覆盖了 `prgname`）。因此 `build.py` 里 `StartupWMClass` 直接写这个
+> 真实值（常量 `WM_CLASS`），Dock / 任务栏才能把窗口关联到本条目、显示正确图标。
+>
+> 核对实际值：
+>
+> ```shell
+> # X11 会话
+> xprop -name "YoudaoNoteExporter" WM_CLASS
+> # Wayland 会话（xprop 对 Wayland 窗口无效，改用这个）
+> ./YoudaoNoteExporter 2>&1 | head    # 看 GLib 告警前缀 **(xxx:PID): WARNING **
+> ```
+>
+> 若 flet 将来改变了这个固化值，构建时覆盖即可，无需改代码：
+> `YOUDAO_WM_CLASS=<新值> python3 build.py`
+>
+> 另外：GNOME 本来就不在标题栏显示应用图标（只显示窗口标题文字），这是设计如此；
+> KDE / XFCE / MATE 才会在标题栏显示图标。
+
+> **Linux 运行时依赖（GTK3 等系统库）**
+>
+> flet 桌面版基于 Flutter，运行需要 GTK3 等系统库（由操作系统提供，**不打包进二进制**）。
+> 这些库在**已安装桌面环境的 Linux 上通常已自带**（GNOME / XFCE / Cinnamon / MATE 等都依赖 GTK3），
+> 一般无需额外操作。仅当在**无桌面的精简系统**上运行时，才需要手动补齐：
+>
+> | 发行版 | 安装命令 |
+> | --- | --- |
+> | Debian / Ubuntu / Mint | `sudo apt install -y libgtk-3-0 libgthread-3-0 libnotify4` |
+> | Fedora / RHEL / CentOS | `sudo dnf install -y gtk3 glib2 libnotify` |
+> | Arch / Manjaro | `sudo pacman -S gtk3 glib2 libnotify` |
+> | openSUSE | `sudo zypper install -y gtk3 glib2 libnotify` |
+>
+> 说明：
+> - 核心三件套 `gtk3 / glib2 / libnotify` 在所有主流桌面发行版中名字稳定、均可用。
+> - 旧的 `libgconf-2-4`（GConf）已被 `GSettings/dconf` 取代，现代 flet 不再依赖；
+>   Fedora 36+、Arch 等已移除此包，故未列入上表。若启动罕见报错提示缺少 `libgconf`，
+>   再按对应发行版的额外源补装即可。
+> - **Alpine 及 musl 系发行版暂不兼容**：flet 二进制基于 glibc 构建，musl 环境下无法运行。
+> - 若启动提示缺少 `.so`，按上表用包管理器安装对应运行时即可。
 
 ### 运行打包后的程序
 
@@ -471,24 +745,24 @@ chmod +x dist/YoudaoNoteExport
 
 ```shell
 # Windows：新建目录 → 移入 → 运行
-mkdir D:\Tools\YoudaoNoteExport
-move dist\YoudaoNoteExport.exe D:\Tools\YoudaoNoteExport\
-D:\Tools\YoudaoNoteExport\YoudaoNoteExport.exe
+mkdir D:\Tools\YoudaoNoteExporter
+move dist\YoudaoNoteExporter.exe D:\Tools\YoudaoNoteExporter\
+D:\Tools\YoudaoNoteExporter\YoudaoNoteExporter.exe
 ```
 
 ```shell
 # macOS
-mkdir -p ~/Applications/YoudaoNoteExport
-cp -R dist/YoudaoNoteExport.app ~/Applications/YoudaoNoteExport/
-open ~/Applications/YoudaoNoteExport/YoudaoNoteExport.app
+mkdir -p ~/Applications/YoudaoNoteExporter
+cp -R dist/YoudaoNoteExporter.app ~/Applications/YoudaoNoteExporter/
+open ~/Applications/YoudaoNoteExporter/YoudaoNoteExporter.app
 ```
 
 ```shell
 # Linux
 mkdir -p ~/opt/youdaonote-export
-cp dist/YoudaoNoteExport ~/opt/youdaonote-export/
-chmod +x ~/opt/youdaonote-export/YoudaoNoteExport
-~/opt/youdaonote-export/YoudaoNoteExport
+cp dist/YoudaoNoteExporter ~/opt/youdaonote-export/
+chmod +x ~/opt/youdaonote-export/YoudaoNoteExporter
+~/opt/youdaonote-export/YoudaoNoteExporter
 ```
 
 > **注意事项**
@@ -501,8 +775,8 @@ chmod +x ~/opt/youdaonote-export/YoudaoNoteExport
 > - 想显式指定数据目录，可设置环境变量 `YOUDAONOTE_DATA_DIR`（便携部署时很有用）：
 >
 >   ```shell
->   set YOUDAONOTE_DATA_DIR=D:\Tools\YoudaoNoteExport\data      # Windows cmd
->   $env:YOUDAONOTE_DATA_DIR="D:\Tools\YoudaoNoteExport\data"   # Windows PowerShell
+>   set YOUDAONOTE_DATA_DIR=D:\Tools\YoudaoNoteExporter\data      # Windows cmd
+>   $env:YOUDAONOTE_DATA_DIR="D:\Tools\YoudaoNoteExporter\data"   # Windows PowerShell
 >   export YOUDAONOTE_DATA_DIR=~/opt/youdaonote-export/data     # macOS / Linux
 >   ```
 >
@@ -523,6 +797,19 @@ GUI 登录页通过 Selenium 打开真实浏览器完成登录，因此**目标�
 
 ### 打包常见问题
 
+- **`FileNotFoundError: [Errno 2] No such file or directory: 'flet'`**：
+  运行 `build.py` 时找不到 flet 命令行。flet 命令由 `flet` 包自身提供
+  （入口点 `flet = flet.cli:main`），报这个错通常说明**脚本不在当前 PATH**：
+
+  1. 是否激活了安装依赖的虚拟环境：`source venv/bin/activate`
+  2. 运行 `build.py` 的 `python3` 与安装依赖的 `pip3` 是否是同一个环境
+  3. 依赖是否装全：打包用 `pip3 install -r requirements-build.txt`
+     （只运行则 `pip3 install -r requirements.txt`）
+     （注意 flet 1.x 的桌面客户端在独立包 `flet-desktop`，`flet run` 与 `flet pack` 都需要）
+
+  为降低环境差异带来的影响，`build.py` 已内置三级回退：PATH 上的 `flet` →
+  当前解释器环境（`sys.prefix`）里的 `flet` 脚本 → 直接用当前解释器执行 `flet.cli:main`。
+  只有三者都不可用（即当前 python 根本没装 flet）时才会报错退出。
 - **打包后提示找不到 selenium-manager / 无法下载驱动**：确认是在目标平台本机打包的；
   `build.py` 已处理该二进制的打包，跨平台打包会导致权限异常
 - **杀毒软件报毒**：PyInstaller 单文件模式常见误报，改用 `--onedir` 或添加信任
@@ -594,5 +881,5 @@ Windows 下 `os.rename()` 在目标文件已存在时会抛出 `FileExistsError`
 
 ## 许可证
 
-[MIT License](LICENSE.md) - Copyright (c) 2026 thinksmart-nicholas
+[MIT License](LICENSE) - Copyright (c) 2026 thinksmart-nicholas
 

@@ -1,5 +1,9 @@
 # 需要 Python >= 3.9：core/covert 中使用了内置泛型注解（如 tuple[str, callable]）
-flet>=1.0
+# 锁定到已验证版本，避免 flet 2.0 破坏性变更导致自动构建突然失败
+flet==1.0.4
+# 桌面客户端：flet 核心包不含它（仅在 flet[desktop]/flet[all] 里），
+# 但 `flet run`（开发）与 `flet pack`（打包）都必须有，否则打不出可运行的 GUI
+flet-desktop==1.0.4
 selenium>=4.11
 requests>=2.32.0
 markdownify==0.5.1

@@ -1,0 +1,153 @@
+# 三平台自动打包：推 tag 即出可下载安装包
+#
+# 放置位置：仓库根目录  .github/workflows/build.yml
+#
+# 用法：
+#   1) 手动触发：Actions → Build desktop binaries → Run workflow
+#   2) 发版本：git tag v1.0.0 && git push origin v1.0.0
+#      → 自动构建三平台产物，并把安装包挂到对应 Release
+#
+# 产物命名：
+#   YoudaoNoteExporter-Windows.exe
+#   YoudaoNoteExporter-macOS.zip        （内含 YoudaoNoteExporter.app / 可执行文件）
+#   YoudaoNoteExporter-Linux            （单文件可执行程序）
+
+name: Build desktop binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# 创建 Release 需要写权限
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            python: '3.11'
+          - os: macos-latest
+            python: '3.11'
+          - os: ubuntu-latest
+            python: '3.11'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: 'pip'
+
+      # requirements-build.txt = 运行时依赖(requirements.txt) + 锁定版本的 PyInstaller
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # 首次或 PyPI 抖动时可能失败，重试一次兜底
+          pip install -r requirements-build.txt || pip install -r requirements-build.txt
+
+      # flet 桌面客户端运行依赖 GTK3 等系统库（不打包进二进制）；
+      # ubuntu-latest 为服务器镜像默认不带，而下方 smoke test 会真拉起 app，需显式安装。
+      - name: Install Linux system deps (GTK3)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-0 libgthread-3-0 libnotify4
+
+      # build.py 内部调用 `flet pack`，默认产出单文件可执行程序到 ./dist
+      - name: Build
+        run: python build.py
+
+      # 用 bash 统一处理，避开各平台 cmd/pwsh 语法差异
+      - name: Smoke test
+        shell: bash
+        run: |
+          set -e
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            test -f dist/YoudaoNoteExporter.exe
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            test -e dist/YoudaoNoteExporter.app
+          else
+            test -x dist/YoudaoNoteExporter
+            # 借虚拟显示器真正拉起一次，捕捉"启动即崩"（缺模块 / 导入错误等）。
+            # 能在超时内持续运行（被 timeout 以 124 杀掉）或干净退出视为通过；
+            # 若很快以非零码退出，说明打包产物有问题，直接让构建失败。
+            if command -v xvfb-run >/dev/null 2>&1; then
+              xvfb-run -a timeout 25 ./dist/YoudaoNoteExporter
+              rc=$?
+              if [ "$rc" -eq 124 ] || [ "$rc" -eq 0 ]; then
+                echo "smoke: OK（能正常启动 / 干净退出）"
+              else
+                echo "smoke: 启动失败，退出码 $rc"
+                exit 1
+              fi
+            else
+              echo "smoke: 未找到 xvfb-run，跳过实拉起（仅校验文件存在）"
+            fi
+          fi
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -e
+          mkdir -p release
+          echo "----- dist 内容 -----"
+          ls -la dist || true
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp dist/YoudaoNoteExporter.exe release/YoudaoNoteExporter-Windows.exe
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            # dist 下通常是 YoudaoNoteExporter.app（目录），整体压缩交付
+            cd dist
+            zip -r -y ../release/YoudaoNoteExporter-macOS.zip .
+          else
+            cp dist/YoudaoNoteExporter release/YoudaoNoteExporter-Linux
+            chmod +x release/YoudaoNoteExporter-Linux
+            cp dist/YoudaoNoteExporter.desktop release/ 2>/dev/null || true
+            # 随包交付 hicolor 多尺寸图标树（打成压缩包，确保作为独立文件进入 Release）
+            # 图标由 build.py 拷到 dist/icons/hicolor
+            tar -czf release/icons-hicolor.tar.gz -C dist icons/hicolor 2>/dev/null || true
+          fi
+
+          echo "----- release 内容 -----"
+          ls -la release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-package
+          path: release/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List files
+        run: ls -laR artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

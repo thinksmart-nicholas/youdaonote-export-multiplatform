@@ -454,7 +454,15 @@ def build_login_view(page, state, on_success):
     """
     user_field = ft.TextField(
         label="有道云笔记邮箱账号",
-        hint_text="只能填写邮箱地址，例如 xxx@163.com（不支持手机号）",
+        hint_text="例如 xxx@163.com",
+        width=380,
+    )
+    # 输入框占位提示(hint_text)在 Flet 里不换行、超宽会被直接截断，
+    # 所以把完整约束放到下方说明文字里（Text 可自动换行，保证完整显示）。
+    account_tip = ft.Text(
+        "只能填写邮箱地址（例如 xxx@163.com），不支持手机号登录。",
+        size=12,
+        color=ft.Colors.GREY,
         width=380,
     )
     status = ft.Text("", selectable=True, size=13)
@@ -830,6 +838,7 @@ def build_login_view(page, state, on_success):
         controls=[
             ft.Container(height=40),
             ft.Text("有道云笔记导出", size=26, weight=ft.FontWeight.BOLD),
+            ft.Text("YoudaoNoteExporter", size=13, color=ft.Colors.GREY),
             ft.Text("登录以开始导出", size=14, color=ft.Colors.GREY),
             ft.Container(
                 padding=24,
@@ -840,6 +849,7 @@ def build_login_view(page, state, on_success):
                     spacing=14,
                     controls=[
                         user_field,
+                        account_tip,
                         ft.Row(
                             alignment=ft.MainAxisAlignment.CENTER,
                             controls=[

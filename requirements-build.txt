@@ -1,0 +1,14 @@
+# 打包专用依赖（构建期），运行程序本身不需要
+#
+# 用法：
+#     pip install -r requirements-build.txt
+#
+# 说明：
+# - 先引入运行时依赖（requirements.txt），再叠加打包工具，一条命令装齐打包环境。
+# - 只想运行源码 / GUI 的用户装 requirements.txt 即可，不必安装这里的构建工具。
+# - PyInstaller 锁定到已验证版本：它升级时若引入破坏性变更，自动构建会毫无征兆地挂掉，
+#   与 flet 锁定 1.0.4 是同样的考虑。
+# - PyInstaller 只用于构建，不会被打进产物（ui/main.py 不会 import 它），不影响 exe 体积。
+
+-r requirements.txt
+pyinstaller==6.22.3

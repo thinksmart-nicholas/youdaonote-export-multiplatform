@@ -34,7 +34,7 @@ class AppState(object):
 
 
 async def main(page: ft.Page):
-    page.title = "有道云笔记导出"
+    page.title = "YoudaoNoteExporter"
     page.window.width = 980
     page.window.height = 740
     page.window.min_width = 720
