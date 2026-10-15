@@ -93,6 +93,14 @@ def _resolve_flet():
 
 
 def main():
+    # 强制 stdout / stderr 使用 UTF-8：Windows CI 或英文区域下控制台默认编码为 cp1252，
+    # 打印中文（如「[build] 执行：」）会抛 UnicodeEncodeError 导致构建失败。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
     parser = argparse.ArgumentParser(description="YoudaoNoteExporter 打包工具")
     parser.add_argument("--onedir", action="store_true",
                         help="生成单目录而非单文件（默认单文件）")

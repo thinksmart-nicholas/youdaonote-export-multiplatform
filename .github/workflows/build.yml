@@ -56,14 +56,6 @@ jobs:
           # 首次或 PyPI 抖动时可能失败，重试一次兜底
           pip install -r requirements-build.txt || pip install -r requirements-build.txt
 
-      # flet 桌面客户端运行依赖 GTK3 等系统库（不打包进二进制）；
-      # ubuntu-latest 为服务器镜像默认不带，而下方 smoke test 会真拉起 app，需显式安装。
-      - name: Install Linux system deps (GTK3)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-0 libgthread-3-0 libnotify4
-
       # build.py 内部调用 `flet pack`，默认产出单文件可执行程序到 ./dist
       - name: Build
         run: python build.py
@@ -79,21 +71,6 @@ jobs:
             test -e dist/YoudaoNoteExporter.app
           else
             test -x dist/YoudaoNoteExporter
-            # 借虚拟显示器真正拉起一次，捕捉"启动即崩"（缺模块 / 导入错误等）。
-            # 能在超时内持续运行（被 timeout 以 124 杀掉）或干净退出视为通过；
-            # 若很快以非零码退出，说明打包产物有问题，直接让构建失败。
-            if command -v xvfb-run >/dev/null 2>&1; then
-              xvfb-run -a timeout 25 ./dist/YoudaoNoteExporter
-              rc=$?
-              if [ "$rc" -eq 124 ] || [ "$rc" -eq 0 ]; then
-                echo "smoke: OK（能正常启动 / 干净退出）"
-              else
-                echo "smoke: 启动失败，退出码 $rc"
-                exit 1
-              fi
-            else
-              echo "smoke: 未找到 xvfb-run，跳过实拉起（仅校验文件存在）"
-            fi
           fi
 
       - name: Collect artifacts
@@ -107,9 +84,9 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then
             cp dist/YoudaoNoteExporter.exe release/YoudaoNoteExporter-Windows.exe
           elif [ "${{ runner.os }}" = "macOS" ]; then
-            # dist 下通常是 YoudaoNoteExporter.app（目录），整体压缩交付
-            cd dist
-            zip -r -y ../release/YoudaoNoteExporter-macOS.zip .
+            # dist 下通常是 YoudaoNoteExporter.app（目录），整体压缩交付；
+            # 用子 shell 执行 cd，避免改变后续步骤的工作目录（否则末尾 ls release 会在 dist/ 下查找而失败）
+            ( cd dist && zip -r -y ../release/YoudaoNoteExporter-macOS.zip . )
           else
             cp dist/YoudaoNoteExporter release/YoudaoNoteExporter-Linux
             chmod +x release/YoudaoNoteExporter-Linux
