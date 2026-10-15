@@ -19,6 +19,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: "发布版本号（如 v1.2.3）；留空则使用触发分支名作为 tag"
+        required: false
+        default: ""
 
 # 创建 Release 需要写权限
 permissions:
@@ -125,6 +130,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          name: ${{ github.event.inputs.version || github.ref_name }}
           files: artifacts/*
           generate_release_notes: true
           fail_on_unmatched_files: true
