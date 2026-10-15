@@ -99,6 +99,8 @@ jobs:
             # 随包交付 hicolor 多尺寸图标树（打成压缩包，确保作为独立文件进入 Release）
             # 图标由 build.py 拷到 dist/icons/hicolor
             tar -czf release/icons-hicolor.tar.gz -C dist icons/hicolor 2>/dev/null || true
+            # 随包发布官方一键安装脚本，用户把它与同目录三件套放一起执行即可
+            cp tools/install-release.sh release/install.sh 2>/dev/null || true
           fi
 
           echo "----- release 内容 -----"

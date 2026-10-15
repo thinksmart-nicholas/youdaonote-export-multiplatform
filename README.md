@@ -649,36 +649,28 @@ bash tools/install-linux.sh /path/to/dist            # 指定产物目录
 bash tools/install-linux.sh --uninstall              # 卸载
 ```
 
-#### 方式二：从 Release 产物手动安装
+#### 方式二：从 Release 产物一键安装（推荐手动安装）
 
-Release 中附带 `icons-hicolor.tar.gz`，内含 hicolor 多尺寸图标树
-（16 / 22 / 24 / 32 / 48 / 64 / 128 / 256 / 512）：
+从 Release 下载以下 4 个文件，放到**同一个目录**，然后在该目录执行安装脚本：
 
-```shell
-# 进入产物所在目录后执行
-tar -xzf icons-hicolor.tar.gz                    # 解压出 icons/hicolor/
-cp -r icons/hicolor/* ~/.local/share/icons/hicolor/
-gtk-update-icon-cache ~/.local/share/icons/hicolor 2>/dev/null || true
-
-# 顺带把程序与 .desktop 也装好，否则只是图标能显示、菜单里仍找不到
-cp YoudaoNoteExporter-Linux ~/.local/bin/YoudaoNoteExporter
-cp YoudaoNoteExporter.desktop ~/.local/share/applications/
-```
-
-安装到系统级（所有用户，需 root）：
+- `YoudaoNoteExporter-Linux`   （可执行程序）
+- `YoudaoNoteExporter.desktop` （启动器）
+- `icons-hicolor.tar.gz`       （hicolor 多尺寸图标树）
+- `install.sh`                 （官方安装脚本，本身也是 Release 产物）
 
 ```shell
-sudo cp -r icons/hicolor/* /usr/share/icons/hicolor/
-sudo gtk-update-icon-cache /usr/share/icons/hicolor
+bash install.sh
 ```
 
-也可以用 `xdg-icon-resource` 逐个尺寸安装图标：
+脚本会自动完成：把可执行文件装到 `~/.local/bin/`、把图标装进 hicolor 主题
+（经 `xdg-icon-resource`，自动建 `index.theme` 并刷新缓存）、把启动器装到
+`~/.local/share/applications/` 并把 `Exec` / `Icon` 改写为本机绝对路径、最后刷新启动器数据库。
+安装完成后若应用菜单未立即出现，注销重新登录即可。
 
-```shell
-for s in 16 22 24 32 48 64 128 256 512; do
-  xdg-icon-resource install --size $s icons/hicolor/${s}x${s}/apps/YoudaoNoteExporter.png YoudaoNoteExporter
-done
-```
+> 说明：
+> - 脚本默认按**当前用户**安装（路径在 `~/.local`）。`install.sh` 与上面三件套一起作为
+>   Release 产物发布；它和 `tools/install-linux.sh`（从本地 `dist/` 构建产物安装）用途不同。
+> - 系统级（所有用户）安装请手动修改`install.sh`脚本，把路径换到 `/usr/local` 并加 `sudo`。
 
 > 图标源文件与生成脚本见 `other/`：`other/icon.png`（1024 源图）、
 > `other/icons/hicolor/`（各尺寸）、`other/make_icon.py`（重新生成）。
@@ -686,7 +678,9 @@ done
 > **关于 Dock 图标**
 >
 > 装好上面的启动器后，**应用菜单**里的图标会正常显示。但运行中的窗口要在 Dock / 任务栏
-> 也显示图标，靠的是 `.desktop` 的 `StartupWMClass` 与窗口真实身份匹配。
+> 也显示图标，靠的是 `.desktop` 的 `StartupWMClass` 与窗口真实身份匹配；同时 `.desktop` 的
+> `Icon=` 必须能按图标名查到已安装图标——若只拷了 `.desktop` 却没把图标装进 hicolor 主题
+> （缺 `index.theme` / 缓存未刷新），Dock 仍会回退成默认图标，请用「方式二」的 `xdg-icon-resource` 方式安装。
 >
 > 注意：flet 的预编译桌面客户端把应用 ID 固化为 `com.appveyor.flet`，GTK 据此派生
 > X11 的 `WM_CLASS` 与 Wayland 的 `app_id`；实测设置 `FLET_APP_ID` 环境变量**并不能**
