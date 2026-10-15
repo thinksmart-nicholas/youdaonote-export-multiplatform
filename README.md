@@ -451,6 +451,7 @@ youdaonote-export-multiplatform/
 │   └── log.py               # 日志配置（输出到文件和终端）
 ├── tools/                   # 维护工具
 │   ├── install-linux.sh     # Linux 安装脚本（可执行文件 / .desktop / 图标 → 标准位置）
+|   ├── install-release.sh   # Linux下Release发行包的一键安装脚本
 │   ├── list_notes.py        # 列出云端笔记目录树（只读元信息，不下载内容）
 │   ├── make_baseline.py     # golden 基线工具（校验转换输出是否变化）
 │   ├── dump_login_headers.py    # 登录请求头抓取（排查用）
