@@ -724,6 +724,8 @@ def build_login_view(page, state, on_success):
         on_success()
 
     def on_login_click(e):
+        if progress.visible:
+            return  # 登录进行中，忽略重复触发（含回车重复提交）
         user_name = (user_field.value or "").strip()
         if not user_name:
             set_status("请先输入有道云笔记邮箱账号", ft.Colors.RED)
@@ -739,6 +741,9 @@ def build_login_view(page, state, on_success):
         set_status("正在登录…")
         # 用 lambda 包裹，规避 run_thread 的参数传递差异
         page.run_thread(lambda: login_worker(user_name))
+
+    # 账号输入框聚焦时按回车也可触发登录
+    user_field.on_submit = on_login_click
 
     def _cookies_from_session(exporter):
         """从已登录的 session 中取出三要素 cookie，重组成可存储的列表。

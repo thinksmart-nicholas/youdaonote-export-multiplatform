@@ -33,13 +33,14 @@
   2. 目录树勾选页   docs/screenshots/tree.png
   3. 导出进度/结果页 docs/screenshots/export.png
   4. 10 秒演示 GIF  docs/screenshots/demo.gif （打开→登录→勾选→导出→打开生成的 .md）
-
+-->
   <p align="center">
     <img src="docs/screenshots/login.png" width="45%"/>
     <img src="docs/screenshots/tree.png" width="45%"/>
+    <img src="docs/screenshots/export.png" width="45%"/>
   </p>
   <p align="center"><img src="docs/screenshots/demo.gif" width="80%"/></p>
--->
+
 
 ---
 
