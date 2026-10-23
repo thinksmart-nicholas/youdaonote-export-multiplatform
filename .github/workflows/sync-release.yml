@@ -1,0 +1,121 @@
+name: Sync Release to Gitee & GitCode
+
+# 由 build.yml 的「Publish release」步骤在发布完成后通过 repository_dispatch 触发：
+#   event_type = publish_finished
+#   client_payload.tag = 本次发布的版本号（与 GitHub Release 的 tag 一致）
+# 本工作流把该 Release 下的全部附件（GitHub 自动生成的源码包除外）上传到
+# Gitee 与 GitCode 的同步仓库。
+
+on:
+  repository_dispatch:
+    types: [publish_finished]
+
+permissions:
+  contents: read   # 仅用于通过 GitHub API 读取本仓库 Release 附件
+
+jobs:
+  sync:
+    name: Sync release assets
+    runs-on: ubuntu-latest
+    env:
+      # ===================== 同步目标配置（请自行填写，目前留空）=====================
+      # Gitee
+      GITEE_API: "https://gitee.com/api/v5"     # Gitee OpenAPI 基址
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}                            # Gitee 私人令牌（PAT，需 repo 权限）
+      GITEE_OWNER: "thinksmart"                            # Gitee 同步仓库 owner
+      GITEE_REPO: "youdaonote-export-multiplatform"                             # Gitee 同步仓库名
+      # GitCode
+      GITCODE_API: "https://api.atomgit.com/api/v5"  # GitCode API 基址（若不同请自行修改）
+      GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}                          # GitCode 私人令牌
+      GITCODE_OWNER: "thinksmart"                          # GitCode 同步仓库 owner
+      GITCODE_REPO: "youdaonote-export-multiplatform"                           # GitCode 同步仓库名
+      # ============================================================================
+      TAG: ${{ github.event.client_payload.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Show target tag
+        run: echo "Syncing release assets, tag=$TAG"
+
+      - name: Download all GitHub release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          resp=$(curl -sL -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG")
+          echo "Release: $(echo "$resp" | jq -r '.tag_name // "?"')"
+          # 同步全部 release 附件（含 GitHub 自动生成的源码包 Source code (zip) / (tar.gz)）
+          echo "$resp" | jq -r '(.assets // [])[] | "\(.name)\t\(.browser_download_url)"' | \
+          while IFS=$'\t' read -r name url; do
+            echo "Downloading $name"
+            curl -sL -H "Authorization: token $GH_TOKEN" -o "assets/$name" "$url"
+          done
+          echo "----- downloaded -----"
+          ls -la assets
+
+      - name: Sync to Gitee & GitCode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sync_to_platform() {
+            local API="$1" TOKEN="$2" OWNER="$3" REPO="$4"
+            if [ -z "$TOKEN" ] || [ -z "$OWNER" ] || [ -z "$REPO" ]; then
+              echo ">> 跳过：$API（TOKEN / OWNER / REPO 未配置）"
+              return 0
+            fi
+            echo "==> 同步到 $API $OWNER/$REPO (tag=$TAG)"
+
+            # 1) 按 tag 查找已存在的 release；不存在则创建
+            local release_id
+            release_id=$(curl -sL "$API/repos/$OWNER/$REPO/releases/tags/$TAG?access_token=$TOKEN" | jq -r '.id // empty')
+            if [ -z "$release_id" ]; then
+              echo "Release $TAG 不存在，创建中…"
+              local body
+              body=$(jq -n --arg t "$TAG" '{tag_name:$t, name:$t, body:"synced from GitHub release", prerelease:false}')
+              release_id=$(curl -sL -X POST -H "Content-Type: application/json" \
+                -d "$body" "$API/repos/$OWNER/$REPO/releases?access_token=$TOKEN" | jq -r '.id // empty')
+            fi
+            if [ -z "$release_id" ]; then
+              echo "!! 无法获取/创建 release，跳过 $API"
+              return 0
+            fi
+            echo "Release id = $release_id"
+
+            # 2) 取该 release 已有附件的「名称 -> id」映射；同名旧附件先删除再上传，实现覆盖而非跳过
+            local existing raw_name raw_id
+            existing=$(curl -sL "$API/repos/$OWNER/$REPO/releases/$release_id?access_token=$TOKEN" \
+              | jq -r '((.assets // []) + (.attach_files // []))[] | "\(.name)\t\(.id)"')
+            declare -A existing_ids
+            while IFS=$'\t' read -r raw_name raw_id; do
+              [ -n "$raw_name" ] && existing_ids["$raw_name"]="$raw_id"
+            done <<< "$existing"
+
+            shopt -s nullglob
+            local f name overwritten=0 uploaded=0
+            for f in assets/*; do
+              name=$(basename "$f")
+              if [ -n "${existing_ids[$name]+_}" ]; then
+                echo "Overwrite: $name (delete old id=${existing_ids[$name]})"
+                # Gitee / GitCode 删除附件接口：DELETE .../releases/{id}/attach_files/{file_id}?access_token=TOKEN
+                curl -sL --fail -X DELETE \
+                  "$API/repos/$OWNER/$REPO/releases/$release_id/attach_files/${existing_ids[$name]}?access_token=$TOKEN" \
+                  || echo "  (删除旧附件失败，仍尝试上传)"
+                overwritten=$((overwritten+1))
+              fi
+              echo "Uploading $name -> $API"
+              # Gitee / GitCode 上传附件接口：POST .../releases/{id}/attach_files?access_token=TOKEN，multipart 字段 file
+              if curl -sL --fail -X POST -F "file=@$f" \
+                  "$API/repos/$OWNER/$REPO/releases/$release_id/attach_files?access_token=$TOKEN"; then
+                uploaded=$((uploaded+1))
+              else
+                echo "  (上传失败，继续下一个)"
+              fi
+              echo
+            done
+            echo "==> $API 完成：上传 $uploaded 个（其中覆盖 $overwritten 个）"
+          }
+
+          sync_to_platform "$GITEE_API"   "$GITEE_TOKEN"   "$GITEE_OWNER"   "$GITEE_REPO"
+          sync_to_platform "$GITCODE_API" "$GITCODE_TOKEN" "$GITCODE_OWNER" "$GITCODE_REPO"

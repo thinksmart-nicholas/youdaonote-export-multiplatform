@@ -137,3 +137,19 @@ jobs:
           files: artifacts/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+      # 发布完成后向本仓库发送自定义事件 publish_finished，
+      # 由 sync-release.yml 监听并把全部附件同步到 Gitee / GitCode。
+      - name: Trigger publish_finished
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ github.event.inputs.version || github.ref_name }}';
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              event_type: 'publish_finished',
+              client_payload: { tag }
+            });
+            console.log('dispatched publish_finished for tag: ' + tag);
