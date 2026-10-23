@@ -54,20 +54,20 @@ jobs:
           echo "----- downloaded -----"
           ls -la assets
 
-      - name: Sync to Gitee & GitCode
+      - name: Sync to Gitee (release only) & GitCode (upload except source)
         shell: bash
         run: |
           set -euo pipefail
 
-          sync_to_platform() {
+          # 通用：在指定平台按 tag 查找或创建 release，结果 id 存到 LAST_RELEASE_ID
+          LAST_RELEASE_ID=""
+          ensure_release() {
             local API="$1" TOKEN="$2" OWNER="$3" REPO="$4"
             if [ -z "$TOKEN" ] || [ -z "$OWNER" ] || [ -z "$REPO" ]; then
               echo ">> 跳过：$API（TOKEN / OWNER / REPO 未配置）"
-              return 0
+              return 1
             fi
-            echo "==> 同步到 $API $OWNER/$REPO (tag=$TAG)"
-
-            # 1) 按 tag 查找已存在的 release；不存在则创建
+            echo "==> 目标平台 $API $OWNER/$REPO (tag=$TAG)"
             local release_id
             release_id=$(curl -sL "$API/repos/$OWNER/$REPO/releases/tags/$TAG?access_token=$TOKEN" | jq -r '.id // empty')
             if [ -z "$release_id" ]; then
@@ -79,11 +79,29 @@ jobs:
             fi
             if [ -z "$release_id" ]; then
               echo "!! 无法获取/创建 release，跳过 $API"
-              return 0
+              return 1
             fi
             echo "Release id = $release_id"
+            LAST_RELEASE_ID="$release_id"
+            return 0
+          }
 
-            # 2) 取该 release 已有附件的「名称 -> id」映射；同名旧附件先删除再上传，实现覆盖而非跳过
+          # Gitee：只创建（或复用）release，不上传任何附件
+          sync_gitee() {
+            if ! ensure_release "$GITEE_API" "$GITEE_TOKEN" "$GITEE_OWNER" "$GITEE_REPO"; then
+              return 0
+            fi
+            echo "==> Gitee 已就绪（release id=$LAST_RELEASE_ID），按要求不上传任何附件"
+          }
+
+          # GitCode：上传除 GitHub 源码包以外的全部 release 附件；同名已存在则先删除再上传（覆盖）
+          sync_gitcode() {
+            if ! ensure_release "$GITCODE_API" "$GITCODE_TOKEN" "$GITCODE_OWNER" "$GITCODE_REPO"; then
+              return 0
+            fi
+            local API="$GITCODE_API" TOKEN="$GITCODE_TOKEN" OWNER="$GITCODE_OWNER" REPO="$GITCODE_REPO" release_id="$LAST_RELEASE_ID"
+
+            # 取已有附件的「名称 -> id」映射，用于覆盖时删除旧文件
             local existing raw_name raw_id
             existing=$(curl -sL "$API/repos/$OWNER/$REPO/releases/$release_id?access_token=$TOKEN" \
               | jq -r '((.assets // []) + (.attach_files // []))[] | "\(.name)\t\(.id)"')
@@ -93,19 +111,27 @@ jobs:
             done <<< "$existing"
 
             shopt -s nullglob
-            local f name overwritten=0 uploaded=0
+            local f name overwritten=0 uploaded=0 skipped_src=0
             for f in assets/*; do
               name=$(basename "$f")
+              # 跳过 GitHub 自动生成的源码包（Source code (zip) / (tar.gz)）
+              case "$name" in
+                "Source code (zip)"|"Source code (tar.gz)")
+                  echo "Skip (source archive): $name"
+                  skipped_src=$((skipped_src+1))
+                  continue
+                  ;;
+              esac
               if [ -n "${existing_ids[$name]+_}" ]; then
                 echo "Overwrite: $name (delete old id=${existing_ids[$name]})"
-                # Gitee / GitCode 删除附件接口：DELETE .../releases/{id}/attach_files/{file_id}?access_token=TOKEN
+                # GitCode 删除附件接口：DELETE .../releases/{id}/attach_files/{file_id}?access_token=TOKEN
                 curl -sL --fail -X DELETE \
                   "$API/repos/$OWNER/$REPO/releases/$release_id/attach_files/${existing_ids[$name]}?access_token=$TOKEN" \
                   || echo "  (删除旧附件失败，仍尝试上传)"
                 overwritten=$((overwritten+1))
               fi
               echo "Uploading $name -> $API"
-              # Gitee / GitCode 上传附件接口：POST .../releases/{id}/attach_files?access_token=TOKEN，multipart 字段 file
+              # GitCode 上传附件接口：POST .../releases/{id}/attach_files?access_token=TOKEN，multipart 字段 file
               if curl -sL --fail -X POST -F "file=@$f" \
                   "$API/repos/$OWNER/$REPO/releases/$release_id/attach_files?access_token=$TOKEN"; then
                 uploaded=$((uploaded+1))
@@ -114,8 +140,8 @@ jobs:
               fi
               echo
             done
-            echo "==> $API 完成：上传 $uploaded 个（其中覆盖 $overwritten 个）"
+            echo "==> GitCode 完成：上传 $uploaded 个（其中覆盖 $overwritten 个，跳过源码包 $skipped_src 个）"
           }
 
-          sync_to_platform "$GITEE_API"   "$GITEE_TOKEN"   "$GITEE_OWNER"   "$GITEE_REPO"
-          sync_to_platform "$GITCODE_API" "$GITCODE_TOKEN" "$GITCODE_OWNER" "$GITCODE_REPO"
+          sync_gitee
+          sync_gitcode
